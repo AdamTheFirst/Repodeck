@@ -1,6 +1,6 @@
 // Actions board: tracked runs (pushes/merges made here or elsewhere) and the latest
 // default-branch run of every repository, grouped by outcome, updating live.
-import { h, mount, icon, btn, iconBtn, act, ago, duration, statusBadge, runDot, banner } from '../dom.js';
+import { h, mount, icon, btn, iconBtn, act, ago, duration, statusBadge, runDot, banner, plural } from '../dom.js';
 import { rpc } from '../api.js';
 import { store, subscribe, boardState, prefs } from '../store.js';
 import { navigate } from '../router.js';
@@ -28,8 +28,12 @@ export function render(main) {
     const doneT = trackers.filter((t) => !(t.state === 'waiting' || t.state === 'running')).slice(0, 12);
     const entries = [];
     const seen = new Set();
+    const cfg = store.config || {};
+    const hidden = new Set(cfg.skipHiddenInActions === false ? [] : cfg.hidden || []);
+    let left = 0;
     for (const r of store.repos) {
       if (!r.slug || !r.slug.github) continue;
+      if (hidden.has(r.path)) { left++; continue; }
       const key = `${r.slug.owner}/${r.slug.repo}`.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
@@ -46,7 +50,7 @@ export function render(main) {
     const searchIn = h('input', { type: 'search', placeholder: 'Filter repositories', value: text, style: { width: '200px' }, oninput: (e) => { text = e.target.value; draw(); const el = page.querySelector('input[type=search]'); if (el) { el.focus(); el.setSelectionRange(text.length, text.length); } } });
     mount(page,
       h('div', { class: 'row', style: { marginBottom: '14px' } },
-        h('div', { class: 'page-head', style: { margin: 0 } }, h('div', null, h('h1', null, 'Actions'), h('div', { class: 'muted' }, store.boardAt ? `Latest run on each default branch · updated ${ago(store.boardAt)}` : 'Loading…'))),
+        h('div', { class: 'page-head', style: { margin: 0 } }, h('div', null, h('h1', null, 'Actions'), h('div', { class: 'muted' }, store.boardAt ? `Latest run on each default branch · updated ${ago(store.boardAt)}${left ? ` · ${plural(left, 'hidden repository')} left out` : ''}` : 'Loading…'))),
         h('span', { class: 'spacer' }),
         h('div', { class: 'pill-tabs' }, [['all', `All (${entries.length})`], ['attention', `Needs attention (${counts.failure + counts.running})`], ['failure', `Failing (${counts.failure})`], ['running', `Running (${counts.running})`]]
           .map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => { filter = k; prefs.set('boardFilter', k); draw(); } }, l))),
@@ -109,7 +113,7 @@ export function render(main) {
         iconBtn('external', 'Open on GitHub', () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}/actions` }))));
   }
 
-  const unsubs = [subscribe('board', draw), subscribe('trackers', draw), subscribe('repos', draw)];
+  const unsubs = [subscribe('board', draw), subscribe('trackers', draw), subscribe('repos', draw), subscribe('config', draw)];
   const tick = setInterval(() => {
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
     if (store.trackers.some((t) => t.state === 'running' || t.state === 'waiting') || Object.values(store.board).some((b) => boardState(b) === 'running')) draw();

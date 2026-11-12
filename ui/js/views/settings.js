@@ -420,7 +420,8 @@ function actions(el) {
       toggle('notifications', 'Windows notifications', 'When a tracked run finishes, a review is requested, or your pull request checks finish'),
       toggle('notifySound', 'Play a sound'),
       toggle('notifyReviewRequests', 'Watch my pull requests and review requests'),
-      toggle('trackExternalRuns', 'Track pushes made outside Repodeck', 'New commits on a default branch, from a terminal or a teammate, are followed on the Actions board too')),
+      toggle('trackExternalRuns', 'Track pushes made outside Repodeck', 'New commits on a default branch, from a terminal or a teammate, are followed on the Actions board too'),
+      toggle('skipHiddenInActions', 'Leave hidden repositories out of Actions', 'Repositories in the sidebar’s Hidden section are not checked, shown on the Actions board or tracked for new runs.')),
     sub('Refresh intervals', 'Shorter intervals use more of your GitHub API allowance.'),
     card(
       number('actionsRefreshSeconds', 'Default-branch status', 'One GitHub request covers every repository', 30, 'seconds'),

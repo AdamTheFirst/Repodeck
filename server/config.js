@@ -32,6 +32,7 @@ const DEFAULTS = {
   theme: 'system',             // system | light | dark
   favourites: [],
   skipHiddenOnFetch: true,     // Fetch all and the background fetch leave hidden repositories alone
+  skipHiddenInActions: true,   // the Actions board does not check or show hidden repositories
   hidden: [],                 // repository paths moved to the sidebar's Hidden section
   bulkConcurrency: 6,
   defaultPrFilter: 'all',

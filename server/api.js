@@ -248,6 +248,8 @@ const H = {
     const cfg = config.update(p.patch);
     if (JSON.stringify(before.roots) !== JSON.stringify(cfg.roots) || JSON.stringify(before.ignore) !== JSON.stringify(cfg.ignore) || before.scanDepth !== cfg.scanDepth) {
       state.scan().then(state.refreshAll).then(state.pollBoard);
+    } else if (JSON.stringify(before.hidden) !== JSON.stringify(cfg.hidden) || before.skipHiddenInActions !== cfg.skipHiddenInActions) {
+      state.pollBoard(); // the Actions board follows what is hidden
     }
     return cfg;
   },

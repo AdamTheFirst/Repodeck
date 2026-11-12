@@ -162,8 +162,11 @@ async function pollBoard() {
   boardRunning = (async () => {
     const targets = [];
     const seen = new Set();
+    const cfg = config.get();
+    const hidden = new Set(cfg.skipHiddenInActions ? cfg.hidden || [] : []);
     for (const [id, s] of slugs) {
       if (!s || !s.github || !repos.has(id)) continue;
+      if (hidden.has(repos.get(id).path)) continue; // hidden: no checks, no run tracking, no notifications
       const key = `${s.owner}/${s.repo}`.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
