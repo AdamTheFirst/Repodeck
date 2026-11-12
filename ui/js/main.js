@@ -194,7 +194,18 @@ async function boot() {
   }));
   on('activity', (a) => { if (!a.ok) { lastErr = a; renderStatus(); } emit('activity', a); });
   onPending((n) => { pendingCount = n; renderStatus(); });
-  onConnection((ok) => { store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
+  let offlineTimer = null;
+  const offline = (show) => {
+    let el = document.getElementById('offline');
+    if (!show) { if (el) el.remove(); return; }
+    if (el) return;
+    el = h('div', { id: 'offline', class: 'offline' }, h('img', { src: '/icon.svg', width: 44, height: 44, alt: '' }),
+      h('h3', null, 'Repodeck is not running'),
+      h('div', { class: 'muted' }, 'It was closed, or Setup stopped it to update. Start Repodeck from the Start menu: this window reconnects by itself.'));
+    document.body.append(el);
+  };
+  onConnection((ok) => { clearTimeout(offlineTimer); if (ok) offline(false); else offlineTimer = setTimeout(() => offline(true), 4000);
+    store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
   subscribe('config', () => { applyTheme(); applyTitle(); renderTopbar(); });
   on('focus', () => { window.focus(); });
   subscribe('accounts', renderTopbar);

@@ -100,8 +100,9 @@ function parseRemoteUrl(url) {
 function looksLikeGitHub(host) {
   if (!host) return false;
   const h = host.toLowerCase();
-  return h === 'github.com' || h === 'ssh.github.com' || h.startsWith('github.com-') || h.startsWith('github.com_')
-    || h.endsWith('.github.com') || h === 'github';
+  if (/(^|\.)(gitlab|bitbucket|codeberg|gitea|azure)\b/.test(h)) return false;
+  // github.com itself, or an alias from the user's ssh config such as github-work or github.com-work
+  return h === 'github.com' || h.endsWith('.github.com') || /(^|[-_.])github([-_.]|$)/.test(h) || h.startsWith('github');
 }
 
 // ---------- log ----------

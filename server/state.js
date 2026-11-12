@@ -66,6 +66,8 @@ async function scan() {
     bus.emit('repos', list());
     saveCacheSoon();
     await Promise.all(found.map((r) => resolveSlug(r).catch(() => null)));
+    bus.emit('repos', list()); // again, now with owner/repo for each: "cloned or not" depends on it
+    saveCacheSoon();
     for (const r of found) watch(r);
     return found;
   })();

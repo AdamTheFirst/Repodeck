@@ -8,7 +8,9 @@ import { navigate } from './router.js';
 let el;
 let treeEl;
 let segEl;
-let filter = '';
+let filter = prefs.get('filter', '');
+let savedEl;
+let inputEl;
 let attentionOnly = prefs.get('dirtyOnly', false);
 let collapsed = new Set(prefs.get('collapsed', ['remote']));
 let remote = null;        // repositories on GitHub (all), or null while unknown
@@ -17,14 +19,17 @@ let remoteError = null;
 
 export function initSidebar(root) {
   el = root;
-  const input = h('input', { type: 'search', placeholder: 'Filter repositories', 'aria-label': 'Filter repositories', style: { flex: '1' }, oninput: (e) => { filter = e.target.value; renderTree(); } });
+  const input = h('input', { type: 'search', placeholder: 'Filter repositories', 'aria-label': 'Filter repositories', value: filter, style: { flex: '1' }, oninput: (e) => { filter = e.target.value; prefs.set('filter', filter); renderTree(); } });
+  inputEl = input;
+  savedEl = h('div', { class: 'saved-filters' });
   segEl = h('div', { class: 'pill-tabs', style: { alignSelf: 'flex-start' } });
   const tools = h('div', { class: 'side-tools' },
     h('div', { class: 'row', style: { gap: '4px' } }, input,
+      iconBtn('star', 'Save the current filter', () => saveFilter()),
       iconBtn('fetch', 'Fetch all repositories', () => fetchAll()),
       iconBtn('refresh', 'Rescan folders and refresh status', () => act(() => rpc('repos.scan'))),
       iconBtn('plus', 'Clone or add repositories', () => import('./onboarding.js').then((m) => m.cloneDialog()))),
-    segEl);
+    segEl, savedEl);
   treeEl = h('div', { class: 'tree', role: 'tree' });
   mount(el, tools, treeEl);
   subscribe('repos', () => { renderTree(); });
@@ -80,9 +85,42 @@ function renderSeg() {
 }
 function setAttention(v) { attentionOnly = v; prefs.set('dirtyOnly', v); renderTree(); }
 
+// ----- saved filters (per account): a name for a filter text plus the "needs attention" switch
+const filterKey = () => (store.config && store.config.currentAccount) || '_local';
+const savedList = () => ((store.config && store.config.savedFilters) || {})[filterKey()] || [];
+async function writeSaved(list) {
+  store.config = await rpc('config.update', { patch: { savedFilters: { ...(store.config.savedFilters || {}), [filterKey()]: list } } });
+  renderTree();
+}
+async function saveFilter() {
+  if (!filter.trim() && !attentionOnly) { banner({ level: 'info', title: 'Type a filter first, then save it', timeout: 3000 }); return; }
+  const { prompt } = await import('./dom.js');
+  const name = await prompt('Save filter', 'Name', filter.trim() || 'Needs attention', { submit: 'Save' });
+  if (!name) return;
+  await writeSaved([...savedList().filter((x) => x.name !== name), { name, text: filter.trim(), attention: attentionOnly }]);
+}
+function applySaved(sf) {
+  const active = filter.trim() === sf.text && attentionOnly === !!sf.attention;
+  filter = active ? '' : sf.text;
+  attentionOnly = active ? false : !!sf.attention;
+  inputEl.value = filter; prefs.set('filter', filter); prefs.set('dirtyOnly', attentionOnly);
+  renderTree();
+}
+function renderSaved() {
+  const list = savedList();
+  savedEl.classList.toggle('hidden', !list.length);
+  mount(savedEl, list.map((sf) => h('button', {
+    class: filter.trim() === sf.text && attentionOnly === !!sf.attention ? 'on' : '',
+    title: `${sf.text ? `Filter: ${sf.text}` : 'All repositories'}${sf.attention ? ' · needs attention only' : ''}\nRight-click to remove`,
+    onclick: () => applySaved(sf),
+    oncontextmenu: (e) => menuAt(e, [{ label: `Remove “${sf.name}”`, icon: 'trash', danger: true, action: () => writeSaved(savedList().filter((x) => x.name !== sf.name)) }]),
+  }, sf.name)));
+}
+
 function renderTree() {
   if (!treeEl) return;
   renderSeg();
+  renderSaved();
   const scroll = treeEl.scrollTop;
   const roots = new Map();
   for (const r of store.repos) {
@@ -150,9 +188,9 @@ function remoteSection() {
 function cloneMenu(anchor, r) {
   const roots = store.config.roots || [];
   const go = async (dest) => {
-    const { cloneSelected, ensureRoot } = await import('./onboarding.js');
+    const { cloneSelected, ensureRoot, cloneDefaults } = await import('./onboarding.js');
     await ensureRoot(dest);
-    await cloneSelected([r], dest, prefs.get('cloneProto', 'https'));
+    await cloneSelected([r], dest, cloneDefaults().proto);
   };
   menuBelow(anchor, [
     { header: true, label: `Clone ${r.nameWithOwner} into` },

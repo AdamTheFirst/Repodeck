@@ -7,6 +7,16 @@ import { pickFolder } from './views/settings.js';
 
 const norm = (p) => p.replace(/[\\/]+$/, '').toLowerCase();
 
+/** How the open account clones: protocol and, for SSH, the host alias from the user's ssh config. */
+export function cloneDefaults() {
+  const a = (store.config.accountSsh || {})[store.config.currentAccount] || {};
+  return { proto: a.protocol || 'https', host: a.host || '' };
+}
+export function cloneUrl(r, proto) {
+  if (proto !== 'ssh') return `${r.url}.git`;
+  return `git@${cloneDefaults().host || 'github.com'}:${r.nameWithOwner}.git`;
+}
+
 // ---------------- GitHub repository picker (shared by setup and the clone dialog) ----------------
 function githubPicker() {
   let all = null;
@@ -46,13 +56,15 @@ function githubPicker() {
       .catch((e) => { error = /not installed/.test(e.message) ? 'GitHub CLI is not installed. Run the installer again to add it.' : /auth|login|401/i.test(e.message) ? 'Not signed in to GitHub yet. Use "Sign in to GitHub" above.' : e.message.split('\n')[0]; draw(); });
   }
   load();
-  return { el, chosen: () => [...chosen.values()], clear: () => { chosen.clear(); draw(); }, onChange: (f) => onChange.add(f), reload: load };
+  return { el, chosen: () => [...chosen.values()], clear: () => { chosen.clear(); draw(); }, onChange: (f) => onChange.add(f), reload: load,
+    /** Repositories known to exist on disk although they are not loaded in the app yet. */
+    addLocal: (slugList) => { for (const x of slugList) { local.add(x.toLowerCase()); chosen.forEach((v, k) => { if (k.toLowerCase() === x.toLowerCase()) chosen.delete(k); }); } draw(); } };
 }
 
 export async function cloneSelected(items, parent, protocol) {
   if (!items.length) return null;
   banner({ level: 'info', title: `Cloning ${plural(items.length, 'repository')} into ${parent}…`, timeout: 4000 });
-  const res = await act(() => rpc('repo.cloneMany', { parent, items: items.map((r) => ({ url: protocol === 'ssh' ? r.sshUrl : `${r.url}.git`, name: r.nameWithOwner.split('/')[1] })) }));
+  const res = await act(() => rpc('repo.cloneMany', { parent, items: items.map((r) => ({ url: cloneUrl(r, protocol), name: r.nameWithOwner.split('/')[1] })) }));
   if (!res) return null;
   const failed = res.filter((x) => x.status === 'failed');
   banner({ level: failed.length ? 'error' : 'success', title: `Cloned ${res.length - failed.length} of ${res.length}`, body: failed.map((f) => `${f.name}: ${f.message}`).join('\n') || null, timeout: failed.length ? 0 : 5000 });
@@ -77,7 +89,9 @@ export function setup(main) {
     accounts: null,
     picker: null,
     dest: '',
-    proto: prefs.get('cloneProto', 'https'),
+    proto: cloneDefaults().proto,
+    sshHost: cloneDefaults().host,
+    slugsFor: '',
     busy: false,
   };
   const page = h('div', { class: 'page' }, h('div', { class: 'wizard' }));
@@ -176,6 +190,20 @@ export function setup(main) {
         foot({ next: () => go(3), nextLabel: 'Continue' })];
     }
     if (!state.picker) state.picker = githubPicker();
+    // Repositories inside the folders ticked in step 2 are already here, even though nothing is saved yet.
+    const key = [...state.picked.keys()].sort().join('|');
+    if (key && state.slugsFor !== key) {
+      state.slugsFor = key;
+      const picker = state.picker;
+      rpc('setup.slugs', { paths: [...state.picked.values()].map((p) => p.path) }).then((list) => {
+        picker.addLocal(list.map((x) => x.slug));
+        // Clone the way the existing repositories were cloned: same SSH host alias.
+        const hosts = new Map();
+        for (const x of list) if (x.host && x.host !== 'github.com') hosts.set(x.host, (hosts.get(x.host) || 0) + 1);
+        const top = [...hosts].sort((p, q) => q[1] - p[1])[0];
+        if (top && !cloneDefaults().host && top[1] >= list.length / 2) { state.sshHost = top[0]; state.proto = 'ssh'; state.detected = true; if (state.step === 2) draw(); }
+      }).catch(() => {});
+    }
     const dests = [...state.picked.values()].map((p) => p.path);
     if (!dests.includes(state.dest)) state.dest = dests[0] || '';
     const destSel = h('select', { style: { maxWidth: '360px' }, onchange: async (e) => {
@@ -185,12 +213,14 @@ export function setup(main) {
       draw();
     } }, dests.map((d) => h('option', { value: d, selected: d === state.dest }, d)), h('option', { value: '__browse' }, dests.length ? 'Choose another folder…' : 'Choose a folder…'));
     if (!dests.length) destSel.selectedIndex = -1;
-    const protoSel = h('select', { onchange: (e) => { state.proto = e.target.value; prefs.set('cloneProto', state.proto); } }, h('option', { value: 'https', selected: state.proto === 'https' }, 'HTTPS'), h('option', { value: 'ssh', selected: state.proto === 'ssh' }, 'SSH'));
+    const protoSel = h('select', { onchange: (e) => { state.proto = e.target.value; draw(); } }, h('option', { value: 'https', selected: state.proto === 'https' }, 'HTTPS'), h('option', { value: 'ssh', selected: state.proto === 'ssh' }, 'SSH'));
     const n = state.picker.chosen().length;
     return [h('section', { class: 'panel wizard-card' },
       h('div', { class: 'col', style: { gap: '4px' } }, h('h1', null, `Clone repositories of ${who}?`), h('span', { class: 'muted' }, 'Optional. Tick what you want on this computer; cloning starts only after you confirm on the next step.')),
       state.picker.el,
-      h('div', { class: 'row wrap' }, h('span', { class: 'nowrap' }, 'Clone into'), destSel, h('span', { class: 'nowrap' }, 'using'), protoSel)),
+      h('div', { class: 'row wrap' }, h('span', { class: 'nowrap' }, 'Clone into'), destSel, h('span', { class: 'nowrap' }, 'using'), protoSel,
+        state.proto === 'ssh' ? [h('span', { class: 'nowrap' }, 'host'), h('input', { type: 'text', value: state.sshHost, placeholder: 'github.com', style: { width: '170px' }, spellcheck: 'false', title: 'Host or alias from your SSH config', onchange: (e) => { state.sshHost = e.target.value.trim(); state.detected = false; } })] : null),
+      state.detected && state.proto === 'ssh' ? h('div', { class: 'info-box' }, `Your existing repositories for this account use the SSH host “${state.sshHost}”, so new clones will too. Change it here or later in Settings → Account.`) : null),
     foot({ next: () => {
       if (state.picker.chosen().length && !state.dest) { banner({ level: 'warn', title: 'Choose the folder to clone into', timeout: 3000 }); return; }
       go(3);
@@ -218,7 +248,10 @@ export function setup(main) {
     state.busy = true; draw();
     try {
       const roots = folders.map((p) => ({ path: p.path, name: p.path.split(/[\\/]/).filter(Boolean).pop() }));
-      store.config = await rpc('config.update', { patch: { roots, firstRunDone: true } });
+      const who = store.config.currentAccount;
+      const patch = { roots, firstRunDone: true };
+      if (who && (state.proto === 'ssh' || state.sshHost)) patch.accountSsh = { ...(store.config.accountSsh || {}), [who]: { protocol: state.proto, host: state.proto === 'ssh' ? state.sshHost : ((store.config.accountSsh || {})[who] || {}).host || '' } };
+      store.config = await rpc('config.update', { patch });
       emit('config');
       if (clones.length) await cloneSelected(clones, state.dest, state.proto);
       await rpc('repos.scan');

@@ -3,7 +3,7 @@ import { h, mount, icon, btn, banner, ago, plural, debounce } from '../dom.js';
 import { rpc } from '../api.js';
 import { store, subscribe, prefs } from '../store.js';
 import { navigate } from '../router.js';
-import { cloneSelected, ensureRoot } from '../onboarding.js';
+import { cloneSelected, ensureRoot, cloneDefaults } from '../onboarding.js';
 import { pickFolder } from './settings.js';
 
 export function render(main) {
@@ -26,8 +26,7 @@ export function render(main) {
   const search = h('input', { type: 'search', placeholder: 'Search repositories', style: { width: '240px' } });
   search.addEventListener('input', debounce(() => { text = search.value.trim().toLowerCase(); draw(); }, 150));
   const destSel = h('select', { style: { maxWidth: '300px' } });
-  const protoSel = h('select', { title: 'Clone protocol' }, h('option', { value: 'https' }, 'HTTPS'), h('option', { value: 'ssh', selected: prefs.get('cloneProto', 'https') === 'ssh' }, 'SSH'));
-  protoSel.addEventListener('change', () => prefs.set('cloneProto', protoSel.value));
+  const protoSel = h('select', { title: 'Clone protocol' }, h('option', { value: 'https' }, 'HTTPS'), h('option', { value: 'ssh', selected: cloneDefaults().proto === 'ssh' }, cloneDefaults().host ? `SSH (${cloneDefaults().host})` : 'SSH'));
   const listEl = h('div');
   const barEl = h('div', { class: 'row wrap', style: { marginBottom: '10px' } });
   const cloneBar = h('div', { class: 'selection-bar hidden', style: { borderRadius: '8px', marginBottom: '10px' } });

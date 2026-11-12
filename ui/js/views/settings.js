@@ -130,6 +130,7 @@ async function account(el) {
   const A = await import('../account.js');
   const info = await rpc('account.list').catch(() => ({ installed: false, accounts: [] }));
   const id = await rpc('account.identity').catch(() => ({ name: '', email: '' }));
+  const hosts = await rpc('ssh.hosts').catch(() => ({ hosts: [], used: [] }));
   mount(el, head('Account', 'Each GitHub account has its own folders, repositories, Actions board and pull requests.'),
     card(
       info.accounts.length ? info.accounts.map((a) => h('div', { class: 'set-row' },
@@ -139,8 +140,23 @@ async function account(el) {
         !a.current ? btn('Switch', () => A.useAccount(a.login), { cls: 'small primary' }) : null))
         : h('div', { class: 'empty' }, info.installed ? 'No GitHub account is signed in.' : 'The GitHub CLI is not installed. Run Setup again and choose Repair.')),
     h('div', { class: 'row', style: { margin: '10px 0 0' } }, info.installed ? btn(info.accounts.length ? 'Add another account' : 'Sign in to GitHub', () => A.signIn(), { cls: info.accounts.length ? '' : 'primary', iconName: 'plus' }) : null),
+    info.current ? [head('Cloning', `How repositories are cloned for ${info.current}. Use SSH with a host alias when this account has its own SSH key.`), cloneCard(info.current, hosts)] : null,
     head('Commit identity', 'The name and email recorded in every commit you make, in Repodeck and in the terminal.'),
     card(row(id.name || 'No name set', id.email || 'No email set', btn('Change…', () => A.editIdentity().then(() => account(el)), { cls: 'small' }))));
+}
+
+function cloneCard(login, hosts) {
+  const cur = (store.config.accountSsh || {})[login] || { protocol: 'https', host: '' };
+  const write = (next) => save({ accountSsh: { ...(store.config.accountSsh || {}), [login]: next } }, 'Clone settings saved');
+  const list = h('datalist', { id: 'ssh-hosts' }, [...new Set([...hosts.used.map((x) => x.host), ...hosts.hosts, 'github.com'])].map((x) => h('option', { value: x })));
+  const hostIn = h('input', { type: 'text', value: cur.host || '', placeholder: 'github.com', list: 'ssh-hosts', style: { width: '220px' }, spellcheck: 'false',
+    onchange: (e) => { const v = e.target.value.trim(); if (v && !/^[A-Za-z0-9._-]+$/.test(v)) { banner({ level: 'warn', title: 'A host name or alias cannot contain spaces or special characters' }); return; } cur.host = v; write({ protocol: cur.protocol, host: v }); } });
+  const suggestion = hosts.used[0] && hosts.used[0].host !== cur.host ? hosts.used[0] : null;
+  return card(
+    row('Protocol', 'HTTPS uses the GitHub sign-in; SSH uses your SSH keys', h('select', { style: { minWidth: '140px' }, onchange: (e) => { cur.protocol = e.target.value; write({ protocol: cur.protocol, host: cur.host || '' }); } },
+      h('option', { value: 'https', selected: cur.protocol !== 'ssh' }, 'HTTPS'), h('option', { value: 'ssh', selected: cur.protocol === 'ssh' }, 'SSH'))),
+    row('SSH host', 'The host or alias from your SSH config that selects this account’s key, e.g. github.com-work. Clones use git@<host>:owner/repo.git', h('div', { class: 'row' }, hostIn, list)),
+    suggestion ? row(`${suggestion.count} of this account’s repositories use “${suggestion.host}”`, 'Use the same host for new clones', btn('Use it', () => { hostIn.value = suggestion.host; cur.host = suggestion.host; cur.protocol = 'ssh'; write({ protocol: 'ssh', host: suggestion.host }).then(() => navigate('#/settings/account')); }, { cls: 'small primary' })) : null);
 }
 
 function tools(el) {

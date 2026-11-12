@@ -7,6 +7,8 @@ const DEFAULTS = {
   port: 47821,
   currentAccount: '',        // GitHub login that was open last ('' = no account); each running window has its own
   accountRoots: {},          // login -> [{ path, name }]; each account has its own folders
+  accountSsh: {},            // login -> { protocol: 'https' | 'ssh', host: 'github.com-work' } used when cloning
+  savedFilters: {},          // login -> [{ name, text, attention }] saved sidebar filters
   ignore: ['node_modules', '.venv', '.venv*', 'venv', 'dist', 'build', 'out', 'target',
     '.pnpm-store', '.next', '.nuxt', '.cache', '.tmp', 'bin', 'obj', '__pycache__', '.gradle', '.idea'],
   scanDepth: 6,
@@ -117,6 +119,8 @@ const VALID = {
   terminalArgs: (v) => Array.isArray(v),
   favourites: (v) => Array.isArray(v),
   currentAccount: (v) => typeof v === 'string' && /^[A-Za-z0-9-]*$/.test(v),
+  accountSsh: (v) => v && typeof v === 'object' && Object.values(v).every((x) => x && ['https', 'ssh'].includes(x.protocol) && (!x.host || /^[A-Za-z0-9._-]+$/.test(x.host))),
+  savedFilters: (v) => v && typeof v === 'object',
 };
 
 function update(patch) {

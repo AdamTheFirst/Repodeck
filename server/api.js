@@ -370,6 +370,25 @@ const H = {
   'account.setIdentity': (p) => require('./accounts').setIdentity(p),
   'account.noreply': (p) => require('./accounts').noreply(p.login),
   'setup.discover': () => require('./discover').discover(),
+  // Which GitHub repositories already exist inside these folders (before they are added to the workspace).
+  'setup.slugs': async (p) => {
+    const scanner = require('./scanner');
+    const cfg = config.get();
+    const found = await scanner.scanAll((p.paths || []).map((x) => ({ path: x })), { ignore: cfg.ignore, depth: cfg.scanDepth });
+    const res = await queue.pool(found, 8, async (r) => { const sl = await git.githubSlug({ ...r, name: path.basename(r.path) }); return sl ? { slug: `${sl.owner}/${sl.repo}`, host: sl.host, path: r.path } : null; });
+    return res.filter((x) => x.ok && x.value).map((x) => x.value);
+  },
+  // Host aliases from the user's ssh config (names only), and the hosts this account's repositories already use.
+  'ssh.hosts': async () => {
+    const out = new Set();
+    try {
+      const txt = fs.readFileSync(path.join(require('node:os').homedir(), '.ssh', 'config'), 'utf8');
+      for (const m of txt.matchAll(/^\s*Host\s+(.+)$/gim)) for (const hname of m[1].trim().split(/\s+/)) if (!/[*?!]/.test(hname)) out.add(hname);
+    } catch {}
+    const used = new Map();
+    for (const sl of state.slugs.values()) if (sl && sl.host && sl.host !== 'github.com') used.set(sl.host, (used.get(sl.host) || 0) + 1);
+    return { hosts: [...out].filter((x) => P.looksLikeGitHub(x)), used: [...used].sort((x, y) => y[1] - x[1]).map(([host, count]) => ({ host, count })) };
+  },
   'gh.repoListAll': () => gh.repoListAll(),
   'repo.cloneMany': async (p) => {
     const parent = path.resolve(p.parent);
