@@ -1,6 +1,7 @@
 // Branches, tags, remotes, worktrees and submodules.
 import { h, mount, icon, btn, act, menuAt, confirmDanger, form, prompt, ago, copyText, banner, showError } from '../dom.js';
 import { rpc } from '../api.js';
+import { fetchRepo } from '../fetch.js';
 import { navigate } from '../router.js';
 import { createBranchDialog, switchTo } from '../repoview.js';
 
@@ -23,7 +24,7 @@ export function render(view, r) {
       h('div', { class: 'row', style: { marginBottom: '12px' } }, search, h('span', { class: 'spacer' }),
         btn('New branch', () => createBranchDialog(r).then(load), { cls: 'primary', iconName: 'plus' }),
         btn('Compare branches…', () => compareDialog(refs), { iconName: 'diff' }),
-        btn('Fetch and prune', () => act(() => rpc('repo.fetch', { id: r.id, prune: true }), { ok: 'Fetched' }).then(load), { iconName: 'fetch' })),
+        btn('Fetch and prune', () => fetchRepo(r, { prune: true }).then(load), { iconName: 'fetch' })),
       h('div', { class: 'section-title' }, h('h2', null, 'Local branches'), h('span', { class: 'faint' }, refs.defaultRemoteRef ? `merged = contained in ${refs.defaultRemoteRef}` : '')),
       h('table', { class: 'grid panel' },
         h('tr', null, h('th', null, 'Branch'), h('th', null, 'Upstream'), h('th', null, 'Ahead / behind'), h('th', null, 'Last commit'), h('th', null, '')),

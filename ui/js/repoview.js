@@ -4,6 +4,7 @@ import { rpc } from './api.js';
 import { store, subscribe, boardFor, boardState } from './store.js';
 import { navigate } from './router.js';
 import { repoMenu } from './sidebar.js';
+import { fetchRepo } from './fetch.js';
 
 const TABS = [
   ['changes', 'Changes', 'diff'], ['graph', 'Graph', 'graph'], ['branches', 'Branches & tags', 'branch'], ['stashes', 'Stashes', 'stash'],
@@ -43,14 +44,16 @@ export function renderRepo(main, id, tab, sub) {
       h('button', { class: 'btn', title: 'Switch branch', onclick: (e) => branchMenu(e.currentTarget) },
         icon('branch'), s.detached ? `detached @ ${(s.oid || '').slice(0, 8)}` : s.branch || '(no commits)', icon('chevronDown', 'sm')),
       s.upstream ? h('span', { class: 'faint', style: { fontSize: '12px' }, title: 'Upstream' }, `→ ${s.upstream}`) : null,
+      s.upstream && s.behind ? h('span', { class: 'badge warn', title: `${s.upstream} has ${s.behind} commit(s) that ${s.branch} does not have. Pull to bring them in.` }, `↓ ${s.behind} behind`) : null,
+      s.upstream && s.ahead ? h('span', { class: 'badge info', title: `${s.ahead} commit(s) to push` }, `↑ ${s.ahead} ahead`) : null,
       s.defaultBranch && s.branch && s.branch !== s.defaultBranch && s.behindDefault
         ? h('button', { class: 'btn small', title: `${s.behindDefault} commit(s) on ${s.defaultRemoteRef} are not in this branch`, onclick: () => updateFromDefault(r) }, icon('warn', 'sm'), `${s.behindDefault} behind ${s.defaultBranch}`) : null,
       h('span', { class: 'spacer' }),
       bs ? h('button', { class: 'btn small ghost', title: `Latest workflow runs on ${b.branch}`, onclick: () => navigate(`#/repo/${r.id}/actions`) },
         h('span', { class: `dot ${bs === 'failure' ? 'bad' : bs === 'running' ? 'run' : bs === 'success' ? 'ok' : ''}` }), `${b.branch}: ${bs === 'failure' ? 'failing' : bs === 'running' ? 'running' : bs === 'success' ? 'passing' : bs}`) : null,
       h('div', { class: 'btngroup' },
-        btn('Fetch', () => act(() => rpc('repo.fetch', { id: r.id }), { ok: 'Fetched' }), { iconName: 'fetch', title: 'Fetch from all remotes' }),
-        btn(pullLabel, () => pull(r), { iconName: 'pull', title: `Pull (${store.config.pullStrategy})`, disabled: !s.upstream }),
+        btn('Fetch', () => fetchRepo(r), { iconName: 'fetch', title: 'Fetch from all remotes' }),
+        btn(pullLabel, () => pull(r), { iconName: 'pull', cls: s.behind ? 'attn' : '', title: s.behind ? `${s.behind} commit(s) on ${s.upstream} are not in ${s.branch} yet. Pull (${store.config.pullStrategy})` : `Pull (${store.config.pullStrategy})`, disabled: !s.upstream }),
         btn(pushLabel, () => push(r), { iconName: 'push', title: s.upstream ? 'Push commits' : 'Publish this branch to origin', disabled: !s.branch }),
         btn('Sync', () => act(() => rpc('repo.sync', { id: r.id }), { ok: 'Synced' }), { iconName: 'sync', title: 'Pull, then push', disabled: !s.upstream })),
       iconBtn('more', 'More actions', (e) => menuBelow(e.currentTarget, moreMenu(r))),
@@ -202,7 +205,7 @@ function moreMenu(r) {
   const s = r.summary || {};
   return [
     { header: true, label: 'Sync' },
-    { label: 'Fetch and prune deleted remote branches', icon: 'fetch', action: () => act(() => rpc('repo.fetch', { id: r.id, prune: true }), { ok: 'Fetched and pruned' }) },
+    { label: 'Fetch and prune deleted remote branches', icon: 'fetch', action: () => fetchRepo(r, { prune: true }) },
     { label: 'Pull (rebase)', icon: 'pull', disabled: !s.upstream, action: () => act(() => rpc('repo.pull', { id: r.id, strategy: 'rebase' }), { ok: 'Pulled with rebase' }) },
     { label: 'Pull (fast-forward only)', icon: 'pull', disabled: !s.upstream, action: () => act(() => rpc('repo.pull', { id: r.id, strategy: 'ff-only' }), { ok: 'Pulled' }) },
     { label: 'Pull (merge)', icon: 'pull', disabled: !s.upstream, action: () => act(() => rpc('repo.pull', { id: r.id, strategy: 'merge' }), { ok: 'Pulled' }) },

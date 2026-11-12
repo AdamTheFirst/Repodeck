@@ -699,3 +699,7 @@ table.grid tr:last-child td { border-bottom: 0; }
 /* hidden repositories */
 .repo-row.is-hidden:not(.selected) { opacity: .62; }
 .repo-row.is-hidden:hover { opacity: 1; }
+
+/* a button that has something waiting, e.g. Pull when the branch is behind */
+.btn.attn { color: var(--warn); font-weight: 600; }
+.btn.attn:hover { background: var(--warn-soft); }

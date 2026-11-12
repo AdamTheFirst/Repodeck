@@ -1,6 +1,7 @@
 // Commit graph: lanes, refs, paging, virtualised rows, details, compare, context actions.
 import { h, mount, icon, btn, iconBtn, act, menuAt, menuBelow, confirmDanger, form, prompt, banner, ago, fmtDate, copyText, debounce, showError } from '../dom.js';
 import { rpc } from '../api.js';
+import { fetchRepo } from '../fetch.js';
 import { store, prefs } from '../store.js';
 import { navigate } from '../router.js';
 import { createDiffView } from '../diffview.js';
@@ -52,7 +53,7 @@ export function render(view, r, sub) {
       h('span', { class: 'spacer' }),
       compareWith ? h('span', { class: 'badge accent' }, 'Comparing two commits', h('a', { onclick: () => { compareWith = null; showDetail(); renderRows(true); } }, ' ×')) : h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Ctrl+click a second commit to compare'),
       btn('Jump to HEAD', () => jumpTo(meta && meta.head), { cls: 'small' }),
-      btn('Fetch', () => act(() => rpc('repo.fetch', { id: r.id }), { ok: 'Fetched' }).then(reset), { cls: 'small', iconName: 'fetch' }),
+      btn('Fetch', () => fetchRepo(r).then(reset), { cls: 'small', iconName: 'fetch' }),
       iconBtn('refresh', 'Reload graph', () => reset()));
   }
   function branchFilterMenu(el) {

@@ -506,7 +506,12 @@ const H = {
   },
 
   // ----- sync -----
-  'repo.fetch': (p) => mutate(p, p.prune ? 'Fetch (prune)' : 'Fetch', (r) => git.fetch(r, { prune: !!p.prune, all: true })),
+  'repo.fetch': (p) => mutate(p, p.prune ? 'Fetch (prune)' : 'Fetch', async (r) => {
+    await git.fetch(r, { prune: !!p.prune, all: true });
+    // where the branch stands now, so the window can say it plainly
+    const s = await git.summary(r);
+    return { branch: s.branch, detached: s.detached, upstream: s.upstream, behind: s.behind, ahead: s.ahead, behindDefault: s.behindDefault, defaultBranch: s.defaultBranch, pullStrategy: config.get().pullStrategy };
+  }),
   'repo.pull': (p) => mutate(p, 'Pull', (r) => git.pull(r, { strategy: p.strategy || config.get().pullStrategy })),
   'repo.push': async (p) => {
     const r = repo(p);

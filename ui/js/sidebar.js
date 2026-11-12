@@ -4,6 +4,7 @@ import { h, mount, icon, iconBtn, menuAt, menuBelow, act, copyText, banner, plur
 import { rpc } from './api.js';
 import { store, subscribe, prefs, boardFor, boardState, emit } from './store.js';
 import { navigate } from './router.js';
+import { fetchRepo } from './fetch.js';
 
 let el;
 let treeEl;
@@ -268,7 +269,7 @@ function repoRow(r, depth, hasKids, dim) {
   if (s.dirty) meta.push(h('span', { class: 'badge warn', title: `${s.counts.staged} staged, ${s.counts.unstaged} changed, ${s.counts.untracked} untracked${s.counts.conflicted ? `, ${s.counts.conflicted} conflicted` : ''}` }, s.dirty));
   if (s.ahead) meta.push(h('span', { class: 'badge info', title: `${s.ahead} commit(s) to push` }, `↑${s.ahead}`));
   if (!s.upstream && s.unpushed) meta.push(h('span', { class: 'badge info', title: `${s.unpushed} commit(s) on a branch that is not published` }, `↑${s.unpushed}`));
-  if (s.behind) meta.push(h('span', { class: 'badge', title: `${s.behind} commit(s) to pull` }, `↓${s.behind}`));
+  if (s.behind) meta.push(h('span', { class: 'badge warn', title: `${s.behind} commit(s) to pull` }, `↓${s.behind}`));
   const prs = myPrCount(r);
   if (prs) meta.push(h('span', { class: 'badge', title: `${prs} open pull request(s) by you` }, icon('pr', 'sm'), prs));
   const ci = bs === 'failure' ? 'bad' : bs === 'running' ? 'run' : bs === 'success' ? 'ok' : '';
@@ -298,7 +299,7 @@ export function repoMenu(r) {
     { label: 'Open in editor', icon: 'edit', action: () => act(() => rpc('open.editor', { id: r.id })) },
     { label: 'Open on GitHub', icon: 'external', disabled: !r.slug || !r.slug.github, action: () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}` }) },
     '-',
-    { label: 'Fetch', icon: 'fetch', action: () => act(() => rpc('repo.fetch', { id: r.id }), { ok: `Fetched ${r.label}` }) },
+    { label: 'Fetch', icon: 'fetch', action: () => fetchRepo(r) },
     { label: 'Pull', icon: 'pull', action: () => act(() => rpc('repo.pull', { id: r.id }), { ok: `Pulled ${r.label}` }) },
     { label: 'Push', icon: 'push', action: () => act(() => rpc('repo.push', { id: r.id }), { ok: `Pushed ${r.label}` }) },
     '-',
