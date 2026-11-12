@@ -33,4 +33,9 @@ function readJson(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
 }
 
+const acctKey = (login) => (login ? String(login).toLowerCase().replace(/[^a-z0-9-]/g, '') : '_none');
+/** Each account keeps its own tracked runs and status cache, so two windows never overwrite each other. */
+paths.stateFor = (login) => path.join(base, `state-${acctKey(login)}.json`);
+paths.cacheFor = (login) => path.join(base, `cache-${acctKey(login)}.json`);
+
 module.exports = { paths, writeJsonAtomic, readJson };

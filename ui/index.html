@@ -10,6 +10,16 @@
   <script type="module" src="/js/main.js"></script>
 </head>
 <body>
+  <div id="splash" role="status" aria-live="polite">
+    <svg class="ld" width="96" height="96" viewBox="-4 -4 34 34" aria-hidden="true">
+      <rect class="back" x="2" y="2" width="16" height="16" rx="5" fill="#45d6b0" opacity=".35"/>
+      <g class="front"><rect x="8" y="8" width="16" height="16" rx="5" fill="#45d6b0"/>
+        <path class="line" d="M13.5 12.5v7M13.5 16.5c0-2.6 5-1.4 5-4" stroke="#06231b" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+        <circle class="n" cx="13.5" cy="12.3" r="1.5" fill="#06231b"/><circle class="n" cx="13.5" cy="19.7" r="1.5" fill="#06231b"/><circle class="n" cx="18.5" cy="12.3" r="1.5" fill="#06231b"/></g>
+    </svg>
+    <div class="what" id="splash-text">Starting…</div>
+    <div class="ld-bar"><i></i></div>
+  </div>
   <div id="app">
     <header id="topbar"></header>
     <div id="body">

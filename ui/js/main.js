@@ -20,12 +20,22 @@ function applyTheme() {
 const NAV = [
   ['repo', 'Repositories', 'folder', () => { const id = store.selected || prefs.get('lastRepo') || (store.repos[0] && store.repos[0].id); navigate(id ? `#/repo/${id}/${store.tab}` : '#/repo'); }],
   ['github', 'GitHub', 'external', () => navigate('#/github')],
-  ['board', 'Actions board', 'bolt', () => navigate('#/board')],
+  ['board', 'Actions', 'bolt', () => navigate('#/board')],
   ['feature', 'Feature branches', 'branch', () => navigate('#/feature')],
-  ['multi', 'All repositories', 'layers', () => navigate('#/multi')],
+  ['multi', 'Overview', 'layers', () => navigate('#/multi')],
   ['activity', 'Activity', 'log', () => navigate('#/activity')],
   ['settings', 'Settings', 'gear', () => navigate('#/settings')],
 ];
+
+/** Full-window loader: at start-up and while switching account. */
+export function splash(text) {
+  const el = document.getElementById('splash');
+  if (!el) return;
+  if (text == null) { el.classList.add('gone'); return; }
+  document.getElementById('splash-text').textContent = text;
+  el.classList.remove('gone');
+}
+window.addEventListener('splash', (e) => splash(e.detail));
 function renderTopbar() {
   const tb = document.getElementById('topbar');
   const counts = { failure: 0, running: 0 };
@@ -128,17 +138,39 @@ document.addEventListener('keydown', (e) => {
 })();
 
 // ---------- boot ----------
+/** Only one window per running copy: a second one offers to take over instead of working in parallel. */
+function singleWindow() {
+  return new Promise((resolve) => {
+    if (!('BroadcastChannel' in window)) { resolve(); return; }
+    const bc = new BroadcastChannel('app-window');
+    let settled = false;
+    const blocked = (title, text, label, onClick) => { mount(document.body, h('div', { class: 'empty', style: { paddingTop: '22vh' } }, h('img', { src: '/icon.svg', width: 48, height: 48, alt: '' }), h('h3', { style: { marginTop: '14px' } }, title), h('div', { class: 'muted', style: { marginBottom: '14px' } }, text), label ? h('button', { class: 'btn primary', onclick: onClick }, label) : null)); };
+    bc.onmessage = (e) => {
+      if (e.data === 'hello' && settled) bc.postMessage('here');
+      else if (e.data === 'here' && !settled) { settled = true; blocked('Already open in another window', 'This account is open in another window. Only one window per account is allowed.', 'Use this window instead', () => { bc.postMessage('takeover'); location.reload(); }); }
+      else if (e.data === 'takeover' && settled) { bc.close(); blocked('Moved to another window', 'You continued in a different window. This one can be closed.', null); }
+    };
+    bc.postMessage('hello');
+    setTimeout(() => { if (!settled) { settled = true; resolve(); } }, 250);
+  });
+}
+
+function applyTitle() { const a = store.config && store.config.currentAccount; document.title = a ? `git-helper · ${a}` : 'git-helper'; }
+
 async function boot() {
+  await singleWindow();
   try {
     await loadAccounts(); // also makes the server pick the open account, so settings below are that account's
     store.config = await rpc('config.get');
   } catch (e) {
     mount(main, h('div', { class: 'empty' }, h('h3', null, 'Cannot reach git-helper'), h('div', null, e.message)));
+    splash(null);
     return;
   }
-  applyTheme();
+  applyTheme(); applyTitle();
   if (store.config._problem) banner({ level: 'error', title: 'Settings problem', body: store.config._problem, timeout: 0 });
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+  splash('Reading your repositories');
   const { repos, roots } = await rpc('repos.list');
   store.roots = roots;
   setRepos(repos);
@@ -163,7 +195,8 @@ async function boot() {
   on('activity', (a) => { if (!a.ok) { lastErr = a; renderStatus(); } emit('activity', a); });
   onPending((n) => { pendingCount = n; renderStatus(); });
   onConnection((ok) => { store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
-  subscribe('config', () => { applyTheme(); renderTopbar(); });
+  subscribe('config', () => { applyTheme(); applyTitle(); renderTopbar(); });
+  on('focus', () => { window.focus(); });
   subscribe('accounts', renderTopbar);
   connect();
   rpc('app.diagnostics').then((d) => {
@@ -186,5 +219,6 @@ async function boot() {
     history.replaceState(null, '', last && store.byId.has(last) ? `#/repo/${last}/changes` : '#/repo');
   }
   startRouter();
+  splash(null);
 }
 boot();

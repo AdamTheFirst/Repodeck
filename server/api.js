@@ -334,18 +334,36 @@ const H = {
     await state.ensureAccount(); // the open account must be decided before anything is listed
     const r = await require('./accounts').list();
     const cfg = config.get();
-    return { ...r, current: cfg.currentAccount, accounts: r.accounts.map((acc) => ({ ...acc, current: acc.login === cfg.currentAccount, folders: (cfg.accountRoots[acc.login] || []).length })) };
+    const open = new Set((await require('./instances').others()).map((i) => i.account));
+    return { ...r, current: cfg.currentAccount, accounts: r.accounts.map((acc) => ({ ...acc, current: acc.login === cfg.currentAccount, elsewhere: open.has(acc.login), folders: (cfg.accountRoots[acc.login] || []).length })) };
   },
   'account.login': () => require('./accounts').startLogin(),
   'account.loginStatus': () => require('./accounts').loginStatus(),
   'account.loginCancel': (p) => require('./accounts').cancelLogin(p.sessionId),
   // Open that account's workspace in git-helper. Does not change which account gh uses in a terminal.
-  'account.use': async (p) => { await state.switchAccount(p.login); return H['account.list'](); },
+  'account.use': async (p) => {
+    const inst = require('./instances');
+    if (p.login && await inst.find(p.login)) { const e = new Error(`${p.login} is already open in another window. Only one window per account is allowed.`); e.kind = 'open-elsewhere'; throw e; }
+    await state.switchAccount(p.login);
+    inst.rename(config.get().currentAccount);
+    return H['account.list']();
+  },
+  // A second window for another account, or bring that account's window forward if it has one.
+  'account.openWindow': async (p) => {
+    if (!/^[A-Za-z0-9-]+$/.test(p.login || '')) throw new Error('Invalid account name');
+    const inst = require('./instances');
+    const running = await inst.find(p.login);
+    if (running) { await inst.rpc(running, 'app.focusWindow', {}, 20_000); return { focused: true }; }
+    spawn(process.execPath, [path.join(__dirname, 'main.js'), '--account', p.login], { detached: true, stdio: 'ignore', windowsHide: true, cwd: path.join(__dirname, '..') }).unref();
+    return { started: true };
+  },
+  'app.focusWindow': () => require('./window').focusOrOpen(),
+  'app.title': () => require('./window').title(),
   // Also make it the default for the gh command in terminals.
   'account.makeDefault': async (p) => { await require('./accounts').switchTo(p.login); return H['account.list'](); },
   'account.logout': async (p) => {
     await require('./accounts').logout(p.login);
-    if (config.get().currentAccount === p.login) await state.switchAccount(await pickOther());
+    if (config.get().currentAccount === p.login) { await state.switchAccount(await pickOther()); require('./instances').rename(config.get().currentAccount); }
     return H['account.list']();
   },
   'account.identity': () => require('./accounts').identity(),

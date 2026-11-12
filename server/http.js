@@ -93,7 +93,7 @@ function createServer({ token, onClients }) {
     for (const c of clients) { try { c.res.write(payload); } catch {} }
   }
 
-  for (const ev of ['repos', 'summary', 'board', 'trackers', 'notify', 'myprs']) state.bus.on(ev, (d) => broadcast(ev, d));
+  for (const ev of ['repos', 'summary', 'board', 'trackers', 'notify', 'myprs', 'focus']) state.bus.on(ev, (d) => broadcast(ev, d));
   log.events.on('activity', (e) => broadcast('activity', e));
 
   async function listen(preferred) {

@@ -12,6 +12,9 @@ const log = require('./log');
 const notify = require('./notify');
 const { paths, writeJsonAtomic, readJson } = require('./paths');
 
+const statePath = () => paths.stateFor(config.get().currentAccount);
+const cachePath = () => paths.cacheFor(config.get().currentAccount);
+
 const bus = new EventEmitter();
 bus.setMaxListeners(100);
 
@@ -26,7 +29,7 @@ let scanning = null;
 // ---------- persisted cache (instant startup) ----------
 
 function loadCache() {
-  const c = readJson(paths.cache, null);
+  const c = readJson(cachePath(), null);
   if (!c || (c.account || '') !== (config.get().currentAccount || '')) return; // never show another account's repositories
   for (const r of c.repos || []) repos.set(r.id, r);
   for (const [id, s] of Object.entries(c.summaries || {})) summaries.set(id, { ...s, stale: true });
@@ -39,7 +42,7 @@ function saveCacheSoon() {
   cacheTimer = setTimeout(() => {
     cacheTimer = null;
     try {
-      writeJsonAtomic(paths.cache, {
+      writeJsonAtomic(cachePath(), {
         account: config.get().currentAccount || '', repos: [...repos.values()], summaries: Object.fromEntries(summaries), slugs: Object.fromEntries(slugs), board,
       });
     } catch (e) { log.warn('Could not write cache', { error: e.message }); }
@@ -200,12 +203,12 @@ function detectExternalPushes(prev, next) {
 /** Only the open account's tracked runs are shown or polled; the others wait until you switch back. */
 function visibleTrackers() { const mine = config.get().currentAccount || ''; return trackers.filter((t) => (t.account || '') === mine); }
 
-let trackers = readJson(paths.state, {}).trackers || [];
+let trackers = readJson(statePath(), {}).trackers || [];
 
 function saveTrackers() {
-  const st = readJson(paths.state, {});
+  const st = readJson(statePath(), {});
   st.trackers = trackers.slice(-50);
-  writeJsonAtomic(paths.state, st);
+  writeJsonAtomic(statePath(), st);
 }
 
 function addTracker({ repoId, slug, sha, branch, reason, source = 'app', pr }) {
@@ -309,7 +312,7 @@ function announce(t) {
 
 // ---------- PR notifications ----------
 
-let prState = readJson(paths.state, {}).prs || null;
+let prState = readJson(statePath(), {}).prs || null;
 async function pollMyPrs() {
   const cfg = config.get();
   if (!cfg.notifications || !cfg.notifyReviewRequests) return;
@@ -334,9 +337,9 @@ async function pollMyPrs() {
       }
     }
     prState = next;
-    const st = readJson(paths.state, {});
+    const st = readJson(statePath(), {});
     st.prs = prState;
-    writeJsonAtomic(paths.state, st);
+    writeJsonAtomic(statePath(), st);
     bus.emit('myprs', { review: Object.values(next.review), mine: Object.values(next.mine) });
   } catch (e) { log.warn('PR notification poll failed', { error: e.message }); }
 }
@@ -348,6 +351,13 @@ function emitAndToast(n) {
 function myPrsSnapshot() { return prState ? { review: Object.values(prState.review), mine: Object.values(prState.mine) } : null; }
 
 // ---------- account workspaces ----------
+/** Tracked runs and PR snapshot of the open account. */
+function loadAccountState() {
+  const st = readJson(statePath(), {});
+  trackers = st.trackers || [];
+  prState = st.prs || null;
+}
+
 /** Make sure the open account is one that is signed in; fall back to gh's active account, else none. */
 async function ensureAccount() {
   let accs = [];
@@ -368,9 +378,10 @@ async function switchAccount(login) {
   }
   config.update({ currentAccount: login || '' });
   gh.forgetAccounts();
+  loadAccountState();
   for (const id of [...watchers.keys()]) unwatch(id);
   repos.clear(); summaries.clear(); slugs.clear(); inflight.clear();
-  board = {}; boardAt = 0; prState = null;
+  board = {}; boardAt = 0;
   bus.emit('repos', []);
   bus.emit('board', { board, at: boardAt });
   bus.emit('trackers', visibleTrackers());
@@ -387,7 +398,6 @@ function setBoardVisible(v) { boardVisible = v ? Date.now() : 0; if (v) pollBoar
 
 const timers = [];
 function start() {
-  loadCache();
   const tick = (fn, secondsFn) => {
     const loop = async () => {
       try { await fn(); } catch (e) { log.warn('Timer task failed', { error: e.message }); }
@@ -395,7 +405,7 @@ function start() {
     };
     timers.push(setTimeout(loop, 1000));
   };
-  ensureAccount().then(scan).then(refreshAll).then(pollBoard).catch((e) => log.error('Initial scan failed', { error: e.message }));
+  ensureAccount().then(() => { loadAccountState(); loadCache(); bus.emit('repos', list()); bus.emit('trackers', visibleTrackers()); }).then(scan).then(refreshAll).then(pollBoard).catch((e) => log.error('Initial scan failed', { error: e.message }));
   tick(async () => { if (Date.now() - lastScan > 10 * 60_000) await scan(); await refreshAll(); }, () => config.get().refreshSeconds);
   tick(pollBoard, () => (boardVisible && Date.now() - boardVisible < 5 * 60_000 ? config.get().boardRefreshSeconds : config.get().actionsRefreshSeconds));
   tick(pollTrackers, () => config.get().trackedRefreshSeconds);

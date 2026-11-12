@@ -12,7 +12,7 @@ const SECTIONS = [
 
 export function render(main, parts) {
   const sub = parts[0] || 'folders';
-  if (sub === 'setup') { import('../onboarding.js').then((m) => m.setup(main)); return null; }
+  if (sub === 'setup') { let dispose = null; let gone = false; import('../onboarding.js').then((m) => { if (!gone) dispose = m.setup(main); }); return () => { gone = true; if (dispose) dispose(); }; }
   const active = SECTIONS.some(([k]) => k === sub) ? sub : 'folders';
   const content = h('div', { class: 'settings-content' });
   mount(main, h('div', { class: 'settings' },

@@ -45,7 +45,7 @@ const connListeners = new Set();
 export function onConnection(fn) { connListeners.add(fn); }
 export function connect() {
   es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-  for (const t of ['repos', 'summary', 'board', 'trackers', 'notify', 'activity', 'myprs']) {
+  for (const t of ['repos', 'summary', 'board', 'trackers', 'notify', 'activity', 'myprs', 'focus']) {
     es.addEventListener(t, (e) => { const d = JSON.parse(e.data); for (const fn of handlers[t] || []) { try { fn(d); } catch (err) { console.error(err); } } });
   }
   es.onopen = () => { connected = true; for (const f of connListeners) f(true); };

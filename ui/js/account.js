@@ -34,15 +34,17 @@ async function openPanel(anchor) {
   await Promise.all([loadAccounts(), rpc('account.identity').then((x) => { identity = x; }).catch(() => { identity = null; })]);
   mount(body,
     h('div', { class: 'ap-section' }, h('div', { class: 'ap-title' }, 'GitHub accounts'),
-      h('div', { class: 'faint', style: { fontSize: '12px' } }, 'Each account has its own folders and repositories. Switching shows only that account’s.'),
-      info.accounts.map((a) => h('div', { class: `ap-account ${a.current ? 'active' : ''}`, style: { cursor: a.current ? 'default' : 'pointer' }, onclick: () => { if (!a.current) { close(); useAccount(a.login); } } },
+      h('div', { class: 'faint', style: { fontSize: '12px' } }, 'Each account has its own folders and repositories, and at most one window.'),
+      info.accounts.map((a) => h('div', { class: `ap-account ${a.current ? 'active' : ''}` },
         avatar(a, 32),
         h('div', { class: 'grow', style: { minWidth: 0 } },
-          h('div', { class: 'row', style: { gap: '6px' } }, h('strong', { class: 'ellipsis' }, a.login), a.current ? h('span', { class: 'badge accent' }, 'open') : null,
+          h('div', { class: 'row', style: { gap: '6px' } }, h('strong', { class: 'ellipsis' }, a.login), a.current ? h('span', { class: 'badge accent' }, 'this window') : null, a.elsewhere ? h('span', { class: 'badge' }, 'open in another window') : null,
             a.state !== 'success' ? h('span', { class: 'badge bad' }, 'needs sign-in') : null),
           h('div', { class: 'sub ellipsis' }, a.folders ? plural(a.folders, 'folder') : 'No folders yet', a.active ? ' · default in terminal' : '')),
         h('div', { class: 'row', style: { gap: '4px' } },
-          !a.current ? btn('Switch', (e) => { e.stopPropagation(); close(); useAccount(a.login); }, { cls: 'small primary' }) : null,
+          a.elsewhere ? btn('Go to window', () => { close(); act(() => rpc('account.openWindow', { login: a.login })); }, { cls: 'small primary' }) : null,
+          !a.current && !a.elsewhere ? btn('Switch', () => { close(); useAccount(a.login); }, { cls: 'small primary', title: 'Show this account in this window' }) : null,
+          !a.current && !a.elsewhere ? btn('New window', () => { close(); act(() => rpc('account.openWindow', { login: a.login }), { ok: `Opening ${a.login} in a new window` }); }, { cls: 'small', title: 'Keep this window and open the account in its own' }) : null,
           btn('', (e) => {
             e.stopPropagation();
             menuBelow(e.currentTarget, [
@@ -79,9 +81,11 @@ async function afterAccountChange() {
 }
 
 export async function useAccount(login) {
+  window.dispatchEvent(new CustomEvent('splash', { detail: `Opening ${login}` }));
   const r = await act(() => rpc('account.use', { login }));
+  if (r) await afterAccountChange();
+  window.dispatchEvent(new CustomEvent('splash', { detail: null }));
   if (!r) return;
-  await afterAccountChange();
   banner({ level: 'success', title: `Now showing ${login}`, body: store.config.roots.length ? null : 'This account has no folders yet. Pick its folders or clone its repositories.', timeout: 4000 });
 }
 
