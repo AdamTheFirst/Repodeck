@@ -72,7 +72,13 @@ onRoute((parts) => {
   store.view = view;
   rpc('app.boardVisible', { visible: view === 'board' }).catch(() => {});
   if (view === 'repo') {
-    const id = a && store.byId.has(a) ? a : (store.selected && store.byId.has(store.selected) ? store.selected : null);
+    let id = a && store.byId.has(a) ? a : (store.selected && store.byId.has(store.selected) ? store.selected : null);
+    if (!id && store.repos.length) {
+      const last = prefs.get('lastRepo');
+      const pick = (last && store.byId.get(last)) || store.repos.find((r) => r.summary && r.summary.dirty) || store.repos[0];
+      history.replaceState(null, '', `#/repo/${pick.id}/${store.tab}`);
+      id = pick.id;
+    }
     store.selected = id;
     if (id) prefs.set('lastRepo', id);
     if (b) store.tab = b;

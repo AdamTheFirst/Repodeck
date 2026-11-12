@@ -13,17 +13,17 @@ let collapsed = new Set(prefs.get('collapsed', []));
 
 export function initSidebar(root) {
   el = root;
-  const input = h('input', { type: 'search', placeholder: 'Filter repositories  (Ctrl+P to jump)', value: filter, oninput: (e) => { filter = e.target.value; prefs.set('filter', filter); renderTree(); } });
-  const dirtyBtn = h('label', { class: 'check', title: 'Show only repositories with changes, unpushed commits or an operation in progress' },
-    h('input', { type: 'checkbox', checked: dirtyOnly, onchange: (e) => { dirtyOnly = e.target.checked; prefs.set('dirtyOnly', dirtyOnly); renderTree(); } }), 'Needs attention');
-  const sortBtn = h('label', { class: 'check', title: 'Put repositories with changes first within each folder' },
-    h('input', { type: 'checkbox', checked: sortDirty, onchange: (e) => { sortDirty = e.target.checked; prefs.set('sortDirty', sortDirty); renderTree(); } }), 'Dirty first');
+  const input = h('input', { type: 'search', placeholder: 'Filter (Ctrl+P to jump)', value: filter, style: { flex: '1' }, oninput: (e) => { filter = e.target.value; prefs.set('filter', filter); renderTree(); } });
+  const dirtyBtn = h('button', { class: `toggle ${dirtyOnly ? 'on' : ''}`, title: 'Show only repositories with changes, unpushed or unpulled commits, or an operation in progress',
+    onclick: () => { dirtyOnly = !dirtyOnly; prefs.set('dirtyOnly', dirtyOnly); dirtyBtn.classList.toggle('on', dirtyOnly); renderTree(); } }, 'Needs attention');
+  const sortBtn = h('button', { class: `toggle ${sortDirty ? 'on' : ''}`, title: 'Put repositories that need attention first within each folder',
+    onclick: () => { sortDirty = !sortDirty; prefs.set('sortDirty', sortDirty); sortBtn.classList.toggle('on', sortDirty); renderTree(); } }, 'Dirty first');
   const tools = h('div', { class: 'side-tools' },
-    input,
-    h('div', { class: 'row' }, dirtyBtn, sortBtn, h('span', { class: 'spacer' }),
+    h('div', { class: 'row', style: { gap: '2px' } }, input,
       iconBtn('fetch', 'Fetch all repositories', () => fetchAll()),
       iconBtn('refresh', 'Refresh status of all repositories (rescan folders)', () => act(() => rpc('repos.scan'))),
-      iconBtn('plus', 'Clone or create a repository', () => import('./views/settings.js').then((m) => m.cloneDialog()))));
+      iconBtn('plus', 'Clone or add repositories', () => import('./onboarding.js').then((m) => m.cloneDialog()))),
+    h('div', { class: 'row', style: { gap: '6px' } }, dirtyBtn, sortBtn));
   treeEl = h('div', { class: 'tree', role: 'tree' });
   mount(el, tools, treeEl);
   subscribe('repos', renderTree);
@@ -94,7 +94,8 @@ function renderTree() {
   }
   if (!store.repos.length) {
     out.push(h('div', { class: 'empty' }, h('h3', null, 'No repositories yet'),
-      h('div', null, 'Add the folders that contain your repositories in ', h('a', { onclick: () => navigate('#/settings') }, 'Settings'), '.')));
+      h('div', { class: 'col', style: { alignItems: 'center' } }, h('a', { onclick: () => navigate('#/settings/setup') }, 'Find repositories on this computer'),
+        h('a', { onclick: () => import('./onboarding.js').then((m) => m.cloneDialog()) }, 'Clone from GitHub'))));
   }
   mount(treeEl, out);
   treeEl.scrollTop = scroll;

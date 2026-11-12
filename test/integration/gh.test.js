@@ -125,6 +125,17 @@ test('review submission carries inline comments with sides and ranges', async ()
   await assert.rejects(gh.submitReview({ owner: 'acme', repo: 'a' }, 3, { event: 'DISMISS' }), /Invalid review/);
 });
 
+test('GitHub error bodies are surfaced instead of a bare HTTP status', async () => {
+  handler = (args) => {
+    if (args[0] === 'auth') return { stdout: ACCOUNTS };
+    const e = new Error('gh: Unprocessable Entity (HTTP 422)');
+    e.stderr = 'gh: Unprocessable Entity (HTTP 422)';
+    e.stdout = JSON.stringify({ message: 'Unprocessable Entity', errors: ['Review Can not approve your own pull request'], status: '422' });
+    return e;
+  };
+  await assert.rejects(gh.submitReview({ owner: 'acme', repo: 'a' }, 3, { event: 'APPROVE' }), /GitHub says: Unprocessable Entity; Review Can not approve your own pull request/);
+});
+
 test('check rollup and check normalisation', () => {
   assert.equal(gh.rollupState([{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { status: 'IN_PROGRESS' }]), 'pending');
   assert.equal(gh.rollupState([{ status: 'COMPLETED', conclusion: 'FAILURE' }, { status: 'IN_PROGRESS' }]), 'failure');

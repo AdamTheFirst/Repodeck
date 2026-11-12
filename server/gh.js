@@ -72,6 +72,14 @@ async function gh(args, { owner, sampleRepo, login, input, timeout = 60_000, rep
   try {
     return await run('gh', args, { cwd: paths.neutral, env, input, timeout, repo: repoLabel, quiet, okCodes, redact: env.GH_TOKEN ? [env.GH_TOKEN] : undefined });
   } catch (e) {
+    // gh api prints GitHub's error body on stdout; surface its explanation instead of just "HTTP 422".
+    try {
+      const body = JSON.parse(String(e.stdout || '').trim() || 'null');
+      if (body && (body.message || body.errors)) {
+        const details = (body.errors || []).map((x) => (typeof x === 'string' ? x : x.message || [x.resource, x.field, x.code].filter(Boolean).join(' '))).filter(Boolean);
+        e.message = `${e.message}\nGitHub says: ${[body.message, ...details].filter(Boolean).join('; ')}`;
+      }
+    } catch {}
     const kind = classify(e);
     if (kind === 'rate-limit') rateLimitedUntil = Date.now() + 5 * 60_000;
     e.kind = kind;
@@ -524,6 +532,29 @@ async function repoList(owner, login) {
   return (await json(args, { login, owner, quiet: true })) || [];
 }
 
+/** Every repository the signed-in account(s) can see: own repos plus each organisation's. */
+async function repoListAll() {
+  const cfg = config.get();
+  const accs = (await accounts()).filter((a) => a.host === HOST && a.state === 'success' && (a.active || cfg.autoDetectAccounts));
+  const out = [];
+  const seen = new Set();
+  for (const a of accs) {
+    const login = a.active ? null : a.login;
+    let orgs = [];
+    try { orgs = (await json(['api', 'user/orgs', '--jq', '[.[].login]'], { login: login || undefined, quiet: true })) || []; } catch {}
+    for (const owner of [a.login, ...orgs]) {
+      let list = [];
+      try { list = await json(['repo', 'list', owner, '--json', 'nameWithOwner,url,sshUrl,description,isPrivate,isArchived,updatedAt', '-L', '500'], { login: login || undefined, quiet: true }); } catch { continue; }
+      for (const r of list || []) {
+        if (seen.has(r.nameWithOwner.toLowerCase())) continue;
+        seen.add(r.nameWithOwner.toLowerCase());
+        out.push({ ...r, account: a.login, owner });
+      }
+    }
+  }
+  return out.sort((x, y) => (y.updatedAt || '').localeCompare(x.updatedAt || ''));
+}
+
 async function version() {
   const r = await run('gh', ['--version'], { cwd: paths.neutral, quiet: true, timeout: 10_000 });
   return r.stdout.split('\n')[0].trim();
@@ -536,5 +567,5 @@ module.exports = {
   prUpdateBranch, prMergeCommit, prTemplate, collaborators, labels, milestones,
   issueList, issueView, issueCreate, issueComment, issueClose, issueReopen, issueEdit,
   runList, runView, runLog, runRerun, runCancel, workflows, workflowYaml, workflowDispatch, deployments,
-  boardBatch, myPrs, repoList, version, rollupState, normalizeCheck, ProcError,
+  boardBatch, myPrs, repoList, repoListAll, version, rollupState, normalizeCheck, ProcError,
 };

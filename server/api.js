@@ -330,6 +330,23 @@ const H = {
     await state.scan(); state.refreshAll();
     return { path: dest };
   },
+  'setup.discover': () => require('./discover').discover(),
+  'gh.repoListAll': () => gh.repoListAll(),
+  'repo.cloneMany': async (p) => {
+    const parent = path.resolve(p.parent);
+    if (!underRoot(parent)) throw new Error('Clone into one of your repository folders (add the folder first).');
+    const out = [];
+    for (const it of p.items || []) {
+      const name = String(it.name || '').trim();
+      try {
+        if (!/^[^<>:"|?*\\/]+$/.test(name)) throw new Error('Invalid folder name');
+        await git.clone({ url: it.url, dest: path.join(parent, name) });
+        out.push({ name, status: 'ok' });
+      } catch (e) { out.push({ name, status: 'failed', message: (e.stderr || e.message || '').trim().split('\n').slice(-3).join('\n') }); }
+    }
+    await state.scan(); state.refreshAll().then(state.pollBoard);
+    return out;
+  },
   'repo.init': async (p) => {
     const dir = path.resolve(p.dir);
     if (!underRoot(dir)) throw new Error('Create the repository inside one of your configured root folders.');

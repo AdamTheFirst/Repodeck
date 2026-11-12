@@ -119,7 +119,10 @@ export function duration(a, b) {
   if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 }
-export function plural(n, w) { return `${n} ${w}${n === 1 ? '' : 's'}`; }
+export function plural(n, w) {
+  if (n === 1) return `${n} ${w}`;
+  return `${n} ${/[^aeiou]y$/.test(w) ? `${w.slice(0, -1)}ies` : /(s|x|ch|sh)$/.test(w) ? `${w}es` : `${w}s`}`;
+}
 export const short = (h) => (h || '').slice(0, 8);
 
 // ---------- overlays ----------

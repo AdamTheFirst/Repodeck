@@ -6,7 +6,7 @@ import { navigate } from '../router.js';
 
 export function render(main, parts) {
   const sub = parts[0] || 'general';
-  if (sub === 'setup') return setup(main);
+  if (sub === 'setup') { import('../onboarding.js').then((m) => m.setup(main)); return null; }
   const page = h('div', { class: 'page' });
   mount(main, h('div', { class: 'tabs' },
     [['general', 'Settings'], ['diagnostics', 'Diagnostics']].map(([k, l]) => h('button', { class: `tab ${sub === k ? 'active' : ''}`, onclick: () => navigate(`#/settings/${k}`) }, l))), page);
@@ -62,7 +62,7 @@ async function general(page) {
           h('td', null, String(store.repos.filter((r) => r.root.toLowerCase() === rt.path.toLowerCase() || r.root.toLowerCase().startsWith(rt.path.toLowerCase())).length)),
           h('td', null, btn('Remove', async () => { if (await confirmDanger({ title: 'Remove folder?', message: `Stop showing repositories under ${rt.path}? Nothing on disk is changed.`, confirmLabel: 'Remove', danger: false })) { await save({ roots: store.config.roots.filter((_, k) => k !== i) }); renderRoots(); } }, { cls: 'small' })))))
         : h('div', { class: 'warn-box' }, 'No folders yet. Add the folders that contain your repositories.'),
-      h('div', null, btn('Add folder…', async () => {
+      h('div', { class: 'row' }, btn('Find repositories automatically', () => navigate('#/settings/setup'), { iconName: 'search' }), btn('Add folder…', async () => {
         const p = await pickFolder('Add a folder that contains repositories');
         if (!p) return;
         if (store.config.roots.some((x) => x.path.toLowerCase() === p.toLowerCase())) { banner({ level: 'info', title: 'That folder is already added' }); return; }
@@ -165,75 +165,4 @@ async function diagnostics(page) {
       }, { cls: 'primary' })), results));
 }
 
-// ---------- first-run setup ----------
-function setup(main) {
-  const page = h('div', { class: 'page', style: { maxWidth: '760px', margin: '0 auto' } });
-  mount(main, page);
-  const roots = [...(store.config.roots || [])];
-  const list = h('div', { class: 'col' });
-  function draw() {
-    mount(list, roots.length ? roots.map((r, i) => h('div', { class: 'panel list-row' }, icon('folder'), h('span', { class: 'grow mono' }, r.path), btn('Remove', () => { roots.splice(i, 1); draw(); }, { cls: 'small' })))
-      : h('div', { class: 'muted' }, 'No folders chosen yet.'));
-  }
-  draw();
-  mount(page,
-    h('h2', { style: { fontSize: '20px', marginBottom: '6px' } }, 'Welcome to git-helper'),
-    h('p', { class: 'muted' }, 'Choose the folders that contain your git repositories. Every repository inside them is listed, including repositories nested inside other repositories. Nothing in your repositories is changed by scanning.'),
-    list,
-    h('div', { class: 'row', style: { margin: '12px 0 20px' } },
-      btn('Add folder…', async () => {
-        const p = await pickFolder('Choose a folder with repositories');
-        if (p && !roots.some((x) => x.path.toLowerCase() === p.toLowerCase())) { roots.push({ path: p, name: p.split(/[\\/]/).filter(Boolean).pop() }); draw(); }
-      }, { iconName: 'plus' }),
-      h('span', { class: 'spacer' }),
-      btn('Continue', async () => {
-        if (!roots.length) { banner({ level: 'warn', title: 'Add at least one folder', timeout: 3000 }); return; }
-        try {
-          store.config = await rpc('config.update', { patch: { roots, firstRunDone: true } });
-          emit('config');
-          await rpc('repos.scan');
-          banner({ level: 'success', title: 'Folders saved. Checking connectivity next is recommended.', timeout: 5000 });
-          navigate('#/settings/diagnostics');
-        } catch (e) { showError(e); }
-      }, { cls: 'primary' })),
-    h('div', { class: 'info-box' }, 'Tip: the Diagnostics page checks that each remote is reachable and which GitHub account can see it.'));
-  return null;
-}
-
-// ---------- clone / init ----------
-export async function cloneDialog() {
-  const roots = store.config.roots;
-  if (!roots.length) { navigate('#/settings'); return; }
-  const mode = await modal({ title: 'Add a repository', body: h('div', { class: 'muted' }, 'Clone an existing repository, or create a new empty one inside one of your folders.'),
-    actions: [{ label: 'Cancel', value: null }, { label: 'Create new', value: 'init' }, { label: 'Clone', cls: 'primary', default: true, value: 'clone' }] });
-  if (!mode) return;
-  if (mode === 'init') {
-    const v = await form({ title: 'Create repository', fields: [
-      { name: 'root', label: 'Inside', type: 'select', options: roots.map((r) => ({ value: r.path, label: r.path })), value: roots[0].path },
-      { name: 'name', label: 'Folder name', required: true, validate: (x) => (/[<>:"|?*\\/]/.test(x) ? 'Invalid folder name' : null) },
-    ], submit: 'Create' });
-    if (v) act(() => rpc('repo.init', { dir: `${v.root.replace(/[\\/]+$/, '')}\\${v.name.trim()}` }), { ok: 'Repository created' });
-    return;
-  }
-  const urlIn = h('input', { type: 'text', placeholder: 'https://github.com/owner/repo.git  or  git@github.com:owner/repo.git', style: { width: '100%' } });
-  const rootSel = h('select', null, roots.map((r) => h('option', { value: r.path }, r.path)));
-  const sub = h('input', { type: 'text', placeholder: 'optional subfolder, e.g. services', style: { width: '100%' } });
-  const nameIn = h('input', { type: 'text', style: { width: '100%' } });
-  const pick = h('div', { class: 'panel', style: { maxHeight: '220px', overflow: 'auto' } }, h('div', { class: 'faint', style: { padding: '8px' } }, 'Loading your GitHub repositories…'));
-  urlIn.addEventListener('input', () => { const m = /([^/:]+?)(\.git)?\/?$/.exec(urlIn.value.trim()); if (m && !nameIn.dataset.touched) nameIn.value = m[1]; });
-  nameIn.addEventListener('input', () => { nameIn.dataset.touched = '1'; });
-  rpc('gh.repoList', {}).then((list) => mount(pick, list.map((x) => h('div', { class: 'list-row', onclick: () => { urlIn.value = x.url + '.git'; urlIn.dispatchEvent(new Event('input')); } },
-    h('span', { class: 'grow' }, x.nameWithOwner), x.isPrivate ? h('span', { class: 'badge' }, 'private') : null))))
-    .catch((e) => mount(pick, h('div', { class: 'faint', style: { padding: '8px' } }, `Could not list repositories: ${e.message.split('\n')[0]}`)));
-  const v = await modal({
-    title: 'Clone repository', wide: true,
-    body: h('div', { class: 'col' }, h('label', { class: 'field' }, h('span', null, 'Repository URL'), urlIn), h('div', { class: 'field' }, h('span', null, 'Or pick one of yours'), pick),
-      h('div', { class: 'row' }, h('label', { class: 'field grow' }, h('span', null, 'Into folder'), rootSel), h('label', { class: 'field grow' }, h('span', null, 'Subfolder'), sub)),
-      h('label', { class: 'field' }, h('span', null, 'Name of the new folder'), nameIn)),
-    actions: [{ label: 'Cancel', value: null }, { label: 'Clone', cls: 'primary', default: true, value: () => ({ url: urlIn.value.trim(), root: rootSel.value, sub: sub.value.trim(), name: nameIn.value.trim() }) }],
-  });
-  if (!v || !v.url || !v.name) return;
-  const parent = v.sub ? `${v.root.replace(/[\\/]+$/, '')}\\${v.sub}` : v.root;
-  banner({ level: 'info', title: `Cloning ${v.name}…`, timeout: 3000 });
-  act(() => rpc('repo.clone', { url: v.url, parent, name: v.name }), { ok: (x) => `Cloned into ${x.path}` });
-}
+export { setup, cloneDialog } from '../onboarding.js';
