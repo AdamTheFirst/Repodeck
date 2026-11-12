@@ -6,6 +6,7 @@ const { EventEmitter } = require('node:events');
 const config = require('./config');
 const scanner = require('./scanner');
 const git = require('./git');
+const unreachable = require('./unreachable');
 const gh = require('./gh');
 const queue = require('./queue');
 const log = require('./log');
@@ -415,7 +416,11 @@ function start() {
   tick(async () => {
     const cfg = config.get();
     if (!cfg.backgroundFetch) return;
-    await queue.pool([...repos.values()], 4, (r) => queue.exclusive(r.id, 'Background fetch', () => git.fetch(r, { all: true })).then(() => refresh(r.id)).catch(() => {}));
+    const hidden = new Set(cfg.skipHiddenOnFetch ? cfg.hidden || [] : []);
+    await queue.pool([...repos.values()].filter((r) => !hidden.has(r.path)), 4, async (r) => {
+      if (unreachable.skipReason(r, await git.remotes(r).catch(() => []))) return; // no remote, or one that is known to be gone
+      return queue.exclusive(r.id, 'Background fetch', () => git.fetch(r, { all: true })).then(() => refresh(r.id)).catch(() => {});
+    });
   }, () => config.get().backgroundFetchMinutes * 60);
 }
 

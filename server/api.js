@@ -7,6 +7,7 @@ const { spawn } = require('node:child_process');
 const config = require('./config');
 const state = require('./state');
 const git = require('./git');
+const unreachable = require('./unreachable');
 const gh = require('./gh');
 const P = require('./parse');
 const queue = require('./queue');
@@ -134,7 +135,7 @@ async function repoBranchInfo(r, branch) {
 }
 
 const BULK = {
-  fetch: { label: 'Fetch', check: () => null, run: (r) => git.fetch(r, { all: true }) },
+  fetch: { label: 'Fetch', check: async (s, r) => unreachable.skipReason(r, await git.remotes(r)), run: (r) => git.fetch(r, { all: true }) },
   pull: {
     label: 'Pull',
     check: (s) => s.inProgress.length ? `${s.inProgress[0]} in progress` : s.detached ? 'detached HEAD' : !s.upstream ? 'no upstream' : s.dirty ? 'uncommitted changes' : s.behind === 0 ? 'already up to date' : null,

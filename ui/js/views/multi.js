@@ -3,7 +3,7 @@ import { h, mount, icon, btn, act, modal, form, confirmDanger, banner, ago, plur
 import { rpc } from '../api.js';
 import { store, subscribe } from '../store.js';
 import { navigate } from '../router.js';
-import { needsAttention, shownRepos } from '../sidebar.js';
+import { needsAttention, shownRepos, fetchTargets } from '../sidebar.js';
 
 const SUBS = [['overview', 'Overview'], ['bulk', 'Bulk operations'], ['cleanup', 'Branch cleanup'], ['search', 'Search commits']];
 
@@ -73,7 +73,7 @@ function overview(page) {
 
     mount(page,
       h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'), h('div', { class: 'muted' }, `${plural(shown.length, 'repository')} · ${rows.length - clean.length} need something · ${clean.length} clean${store.repos.length > shown.length ? ` · ${store.repos.length - shown.length} hidden` : ''}`)),
-        h('span', { class: 'spacer' }), btn('Fetch all', () => runBulk('fetch', shown.map((r) => r.id), {}, 'Fetch'), { iconName: 'fetch' })),
+        h('span', { class: 'spacer' }), btn('Fetch all', () => runBulk('fetch', fetchTargets().map((r) => r.id), {}, 'Fetch'), { iconName: 'fetch' })),
       h('div', { class: 'tiles' }, [
         [dirty.length, 'uncommitted', 'var(--warn)'], [unpushed.length, 'unpushed', 'var(--info)'], [behind.length, 'behind upstream', 'var(--warn)'],
         [off.length, 'off default branch', 'var(--text)'], [stashes.length, 'with stashes', 'var(--text)'], [clean.length, 'clean', 'var(--ok)'],
@@ -155,7 +155,7 @@ function cleanup(page) {
     function draw() {
       mount(page,
         h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Branch cleanup'), h('div', { class: 'muted' }, 'Local branches already merged into the default branch, or whose remote branch was deleted. Fetch and prune first for accurate results.')),
-          h('span', { class: 'spacer' }), btn('Fetch and prune all', () => act(() => rpc('bulk.run', { op: 'fetch', ids: store.repos.map((r) => r.id) })).then(load), { cls: 'small' })),
+          h('span', { class: 'spacer' }), btn('Fetch and prune all', () => act(() => rpc('bulk.run', { op: 'fetch', ids: fetchTargets().map((r) => r.id) })).then(load), { cls: 'small' })),
         list.length ? h('table', { class: 'grid panel' }, h('tr', null, h('th', null, ''), h('th', null, 'Repository'), h('th', null, 'Branch'), h('th', null, 'Why'), h('th', null, 'Last commit')),
           list.map((x) => { const k = `${x.id}|${x.branch}`; return h('tr', { class: 'clickable', onclick: () => { if (sel.has(k)) sel.delete(k); else sel.add(k); draw(); } },
             h('td', null, h('input', { type: 'checkbox', checked: sel.has(k) })), h('td', null, x.label), h('td', { class: 'mono' }, x.branch),

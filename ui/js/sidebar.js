@@ -1,6 +1,6 @@
 // Repository sidebar: local repositories per folder (nested), then repositories that exist
 // on GitHub for the open account but are not cloned yet.
-import { h, mount, icon, iconBtn, menuAt, menuBelow, act, copyText, banner } from './dom.js';
+import { h, mount, icon, iconBtn, menuAt, menuBelow, act, copyText, banner, plural } from './dom.js';
 import { rpc } from './api.js';
 import { store, subscribe, prefs, boardFor, boardState, emit } from './store.js';
 import { navigate } from './router.js';
@@ -327,13 +327,19 @@ async function toggleHidden(r) {
   if (hide) banner({ level: 'info', title: `${r.label} is hidden`, body: 'It is in the Hidden section at the bottom of the sidebar.', timeout: 6000, actions: [{ label: 'Undo', action: () => toggleHidden(r) }] });
 }
 
+/** What "Fetch all" covers: hidden repositories only when the setting says so. */
+export const fetchTargets = () => (store.config && store.config.skipHiddenOnFetch === false ? store.repos : shownRepos());
+
 async function fetchAll() {
-  const ids = shownRepos().map((r) => r.id); // hidden repositories are left alone
+  const ids = fetchTargets().map((r) => r.id);
   if (!ids.length) return;
-  banner({ level: 'info', title: `Fetching ${ids.length} repositories…`, timeout: 2500 });
+  banner({ level: 'info', title: `Fetching ${plural(ids.length, 'repository')}…`, timeout: 2500 });
   const res = await act(() => rpc('bulk.run', { op: 'fetch', ids }));
   if (!res) return;
   const failed = res.filter((x) => x.status === 'failed');
-  if (failed.length) banner({ level: 'error', title: `Fetch failed in ${failed.length} repositories`, body: failed.map((f) => `${f.label}: ${f.message.split('\n')[0]}`).join('\n'), timeout: 0 });
-  else banner({ level: 'success', title: `Fetched ${res.length} repositories` });
+  const skipped = res.filter((x) => x.status === 'skipped');
+  const done = res.length - failed.length - skipped.length;
+  const note = skipped.length ? `Left alone: ${plural(skipped.length, 'repository')} with no remote, or with a remote that was not found or refused access last time. Fetch one on its own to try it again.` : '';
+  if (failed.length) banner({ level: 'error', title: `Fetch failed in ${plural(failed.length, 'repository')}`, body: failed.map((f) => `${f.label}: ${f.message.split('\n')[0]}`).join('\n') + (note ? `\n\n${note}` : ''), timeout: 0 });
+  else banner({ level: 'success', title: `Fetched ${plural(done, 'repository')}`, body: note || undefined });
 }

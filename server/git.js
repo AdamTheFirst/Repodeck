@@ -6,6 +6,7 @@ const { run, ProcError } = require('./proc');
 const P = require('./parse');
 const { paths } = require('./paths');
 const config = require('./config');
+const unreachable = require('./unreachable');
 
 const GIT_BASE = ['-c', 'core.quotepath=false', '-c', 'color.ui=false', '-c', 'core.pager=cat',
   '-c', 'advice.detachedHead=false', '-c', 'i18n.logOutputEncoding=UTF-8'];
@@ -504,7 +505,9 @@ async function fetch(repo, { prune = false, all = true, remote } = {}) {
   const args = ['fetch', '--quiet'];
   if (prune) args.push('--prune');
   if (remote) args.push(remote); else if (all) args.push('--all');
-  await git(repo, args, { timeout: NETWORK_TIMEOUT });
+  try { await git(repo, args, { timeout: NETWORK_TIMEOUT }); }
+  catch (e) { if (!remote) unreachable.note(repo, await remotes(repo), e.message); throw e; }
+  unreachable.clear(repo);
   forgetDefault(repo);
 }
 

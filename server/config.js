@@ -31,6 +31,7 @@ const DEFAULTS = {
   terminalArgs: ['-d', '{path}'],
   theme: 'system',             // system | light | dark
   favourites: [],
+  skipHiddenOnFetch: true,     // Fetch all and the background fetch leave hidden repositories alone
   hidden: [],                 // repository paths moved to the sidebar's Hidden section
   bulkConcurrency: 6,
   defaultPrFilter: 'all',

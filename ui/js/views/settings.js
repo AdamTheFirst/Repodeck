@@ -410,7 +410,8 @@ function behaviour(el) {
     sub('Background', 'Nothing changes in your repositories in the background unless you turn this on.'),
     card(
       toggle('backgroundFetch', 'Fetch all repositories periodically', 'Keeps ahead/behind counts current. Never pulls, merges or prunes.'),
-      number('backgroundFetchMinutes', 'Fetch every', null, 1, 'minutes')));
+      number('backgroundFetchMinutes', 'Fetch every', null, 1, 'minutes'),
+      toggle('skipHiddenOnFetch', 'Do not fetch hidden repositories', 'Fetch all and the periodic fetch leave repositories in the sidebar’s Hidden section alone. Fetching one on its own still works.')));
 }
 
 function actions(el) {

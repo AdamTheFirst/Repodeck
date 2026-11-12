@@ -9,7 +9,8 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Accounts are separate workspaces with their own folders; one window per account, several accounts side by side
 - Setup wizard in four steps; nothing is selected or saved until you confirm
 - Sidebar section for repositories on GitHub that are not cloned yet
-- Hide repositories you do not work on: they move to a Hidden section in the sidebar and stay out of the counts, the Overview and Fetch all
+- Hide repositories you do not work on: they move to a Hidden section in the sidebar and stay out of the counts and the Overview, and are not fetched by Fetch all or the periodic fetch (a setting, on by default)
+- Fetch all leaves alone repositories with no remote, and ones whose remote was not found or refused access last time, instead of failing on them every time
 - GitHub page with clone status; Overview with one-click push, pull and review
 - Settings reorganised: Accounts & folders in one place, SSH connections (create, test, remove, copy keys), Git configuration, and Guides
 - An account set to SSH uses SSH for fetch, pull and push in every repository, including ones cloned with an https:// address; the repositories themselves are not changed
