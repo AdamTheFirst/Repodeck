@@ -1,0 +1,16 @@
+{
+  "name": "git-helper",
+  "version": "0.1.0",
+  "description": "A lightweight local app for many git repositories: source control, commit graph, pull requests and GitHub Actions status in one window.",
+  "private": true,
+  "license": "MIT",
+  "main": "server/main.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/main.js",
+    "test": "node --test \"test/unit/*.test.js\" \"test/integration/*.test.js\"",
+    "playground": "node scripts/dev-playground.js --fresh"
+  }
+}
