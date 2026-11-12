@@ -58,6 +58,24 @@ if (-not (Test-Path (Join-Path $wv 'Microsoft.Web.WebView2.Core.dll'))) {
   Remove-Item -Recurse -Force $tmp
 }
 
+# Node.js travels with the app, so nobody has to install it. Pinned by version and SHA-256 (from nodejs.org's SHASUMS256.txt).
+$nodeVersion = '22.23.5'
+$nodeHash = '247e9693d316da9857e44990e5e11709f596f18112251b8026ec6eed80bdf38a'
+$nodeDir = Join-Path $root "installer\vendor\node-$nodeVersion"
+$nodeExe = Join-Path $nodeDir 'node.exe'
+if (-not (Test-Path $nodeExe)) {
+  Write-Host "Downloading Node.js $nodeVersion"
+  New-Item -ItemType Directory -Force -Path $nodeDir | Out-Null
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+  (New-Object Net.WebClient).DownloadFile("https://nodejs.org/dist/v$nodeVersion/win-x64/node.exe", $nodeExe)
+}
+if ((Get-FileHash $nodeExe -Algorithm SHA256).Hash.ToLower() -ne $nodeHash) { Remove-Item $nodeExe; throw 'The Node.js download does not match the pinned hash.' }
+function Copy-Node([string]$to) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $to 'node') | Out-Null
+  Copy-Item $nodeExe (Join-Path $to 'node')
+  Set-Content -Path (Join-Path $to 'node\LICENSE-node.txt') -Value "Node.js $nodeVersion, from https://nodejs.org. Licence: https://github.com/nodejs/node/blob/v$nodeVersion/LICENSE"
+}
+
 # Product name and version inside each exe: shown under Properties > Details, and checked when the files are code-signed.
 function New-AssemblyInfo([string]$file, [string]$title) {
   Set-Content -Path $file -Encoding UTF8 -Value @(
@@ -88,6 +106,7 @@ if ($SignedApp) {
 Copy-Item -Recurse (Join-Path $wv '*') $stage
 
 # 2. payload
+Copy-Node $stage
 foreach ($d in 'server', 'ui') { Copy-Item -Recurse (Join-Path $root $d) (Join-Path $stage $d) }
 foreach ($f in 'package.json', 'LICENSE', 'README.md', 'SECURITY.md', 'CHANGELOG.md') { $p = Join-Path $root $f; if (Test-Path $p) { Copy-Item $p $stage } }
 Copy-Item $icon $stage
@@ -107,5 +126,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }
 # dist\ is also a runnable copy of the launcher and window, used when running from source
 Copy-Item (Join-Path $stage 'Repodeck.exe') $dist
 Copy-Item -Recurse (Join-Path $wv '*') $dist
+Copy-Node $dist
 Remove-Item -Recurse -Force $stage, $zip, $buildInfo, $appInfo, $setupInfo
-Get-ChildItem $dist | ForEach-Object { '{0,-36} {1,8:N0} KB' -f $_.Name, ($_.Length / 1KB) }
+Get-ChildItem $dist -File | ForEach-Object { '{0,-36} {1,8:N0} KB' -f $_.Name, ($_.Length / 1KB) }

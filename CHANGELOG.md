@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.1.1
+
+- Node.js is included with the app, so Setup only needs Git and GitHub CLI (Setup is about 30 MB now)
+
 ## 1.1.0
 
 - Update check: the app says when a newer version is out, with a Download button; also under Settings → About, where it can be turned off

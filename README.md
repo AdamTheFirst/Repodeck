@@ -22,7 +22,7 @@ Setup lets you choose:
 - **All users**: installs in Program Files for everyone on the computer. Windows asks for administrator rights once.
 - The folder, a desktop shortcut, and whether to install missing tools.
 
-**Required tools.** Repodeck needs Git, GitHub CLI and Node.js 20 or later. Setup shows which are present and installs the missing ones with `winget` if you leave the box ticked. You sign in to GitHub inside the app, not during setup.
+**Required tools.** Repodeck needs Git and GitHub CLI. Setup shows which are present and installs the missing ones: with `winget` where it exists, otherwise by downloading the official installers and checking their publisher signatures. Node.js, which runs the app, is included. You sign in to GitHub inside the app, not during setup.
 
 Run Setup again later to update, repair or uninstall; it is also listed under Installed apps in Windows. Uninstalling keeps your settings unless you tick the box, and never touches your repositories.
 

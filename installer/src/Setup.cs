@@ -184,7 +184,6 @@ class SetupForm : Form
         wantDesktop = DesktopArg; wantTools = !NoToolsArg; wipeData = WipeArg;
         tools.Add(new Tool { Name = "Git", Exe = "git", Args = "--version", Pattern = @"(\d+\.\d+\.\d+)", Min = new Version(2, 30, 0), WingetId = "Git.Git" });
         tools.Add(new Tool { Name = "GitHub CLI", Exe = "gh", Args = "--version", Pattern = @"(\d+\.\d+\.\d+)", Min = new Version(2, 40, 0), WingetId = "GitHub.cli" });
-        tools.Add(new Tool { Name = "Node.js", Exe = "node", Args = "--version", Pattern = @"v(\d+\.\d+\.\d+)", Min = new Version(20, 0, 0), WingetId = "OpenJS.NodeJS.LTS" });
         BuildUi();
         Shown += delegate
         {
@@ -369,7 +368,7 @@ class SetupForm : Form
         Heading("Welcome to Repodeck Setup", "Version " + BuildInfo.Version);
         Para("Repodeck shows all your git repositories in one window: source control, commit graph, pull requests and GitHub Actions.", 112, 40);
         Para("Setup will:", 166, 20, null, new Font("Segoe UI Semibold", 9f));
-        Para("•  copy the app to this computer and add it to the Start menu\n•  check for Git, GitHub CLI and Node.js, and offer to install what is missing\n•  never change your repositories or your git settings", 190, 64, Ui.Muted);
+        Para("•  copy the app to this computer and add it to the Start menu\n•  check for Git and GitHub CLI, and offer to install what is missing\n•  never change your repositories or your git settings", 190, 64, Ui.Muted);
         Para("You sign in to GitHub later, inside the app.", 270, 20, Ui.Muted);
         onBack = null; onNext = PageOptions;
         Buttons(null, "Next", "Cancel");
@@ -493,7 +492,7 @@ class SetupForm : Form
         Clear(); Steps(0, "Choose", "Working", "Finish");
         Heading("Uninstall Repodeck " + installedVersion + "?", "Installed " + ScopeText() + " in\n" + installDir);
         Para("This removes the program files, the shortcuts and the entry in Installed apps.", 124, 20);
-        Para("•  Your repositories are not touched.\n•  Git, GitHub CLI and Node.js stay installed.\n•  Your settings are kept, unless you tick the box below.", 150, 60, Ui.Muted);
+        Para("•  Your repositories are not touched.\n•  Git and GitHub CLI stay installed.\n•  Your settings are kept, unless you tick the box below.", 150, 60, Ui.Muted);
         Check("Also delete my settings, logs and safety copies of discarded changes", 222, wipeData, delegate(object s, EventArgs e) { wipeData = ((CheckBox)s).Checked; });
         onBack = startAction == "uninstall" ? (Action)null : PageMaintenance;
         onNext = delegate { Run("uninstall"); };
@@ -555,7 +554,7 @@ class SetupForm : Form
         else if (action == "uninstall")
         {
             Para("The app, its shortcuts and its entry in Installed apps are gone.", y, 20); y += 26;
-            Para((wipeData ? "Your settings were deleted too." : "Your settings were kept in\n" + dataDir) + "\n\nGit, GitHub CLI and Node.js are still installed.", y, 80, Ui.Muted);
+            Para((wipeData ? "Your settings were deleted too." : "Your settings were kept in\n" + dataDir) + "\n\nGit and GitHub CLI are still installed.", y, 80, Ui.Muted);
         }
         else if (toolsMissing)
         {

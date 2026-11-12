@@ -5,7 +5,7 @@
   still needs are Git and GitHub CLI. It is not signed here: the Store signs it after upload.
 
   Downloads (each checked against a pinned SHA-256):
-    - Node.js for Windows x64, from nodejs.org
+    - Node.js for Windows x64, from nodejs.org (by build.ps1)
     - Microsoft's packaging tool (makeappx.exe), from the Microsoft.Windows.SDK.BuildTools package on nuget.org
 
     powershell -File scripts\build-store.ps1
@@ -31,12 +31,6 @@ function Get-Pinned([string]$url, [string]$file, [string]$sha256) {
 $app = Join-Path $root 'local\store-app'
 & (Join-Path $PSScriptRoot 'build.ps1') -Out $app | Out-Null
 if (-not (Test-Path (Join-Path $app 'Repodeck.exe'))) { throw 'The app build failed.' }
-
-# 2. Node.js
-$nodeVersion = '22.23.5'
-$nodeHash = '247e9693d316da9857e44990e5e11709f596f18112251b8026ec6eed80bdf38a'
-$nodeExe = Join-Path $vendor "node-$nodeVersion\node.exe"
-Get-Pinned "https://nodejs.org/dist/v$nodeVersion/win-x64/node.exe" $nodeExe $nodeHash
 
 # 3. makeappx.exe
 $sdkVersion = '10.0.28000.2957'
@@ -65,9 +59,7 @@ Copy-Item (Join-Path $app 'Repodeck.exe'), (Join-Path $app '*.dll'), (Join-Path 
 Copy-Item -Recurse (Join-Path $app 'runtimes') $layout
 foreach ($d in 'server', 'ui') { Copy-Item -Recurse (Join-Path $root $d) (Join-Path $layout $d) }
 foreach ($f in 'package.json', 'LICENSE', 'README.md', 'SECURITY.md', 'CHANGELOG.md', 'installer\repodeck.ico') { Copy-Item (Join-Path $root $f) $layout }
-New-Item -ItemType Directory -Force -Path (Join-Path $layout 'node') | Out-Null
-Copy-Item $nodeExe (Join-Path $layout 'node')
-Set-Content -Path (Join-Path $layout 'node\LICENSE-node.txt') -Value "Node.js $nodeVersion, from https://nodejs.org. Licence: https://github.com/nodejs/node/blob/v$nodeVersion/LICENSE"
+Copy-Item -Recurse (Join-Path $app 'node') $layout   # the pinned Node.js that build.ps1 fetched
 & node (Join-Path $PSScriptRoot 'make-icon.js') --store (Join-Path $layout 'Assets') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'The Store pictures could not be made.' }
 Move-Item (Join-Path $layout 'Assets\StoreListingLogo300.png') (Join-Path $out 'StoreListingLogo300.png')   # for the Store listing, not the package

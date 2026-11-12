@@ -61,7 +61,7 @@ static class Launcher
         string node = File.Exists(own) ? own : FindNode(path);
         if (node == null)
         {
-            MessageBox.Show("Node.js was not found.\n\nRun Repodeck Setup and choose Repair to install it, or install Node.js 20 or newer yourself.", "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Repodeck's copy of Node.js is missing.\n\nRun Repodeck Setup and choose Repair.", "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return 1;
         }
         try
