@@ -716,3 +716,5 @@ table.grid tr:last-child td { border-bottom: 0; }
 .cd-files { width: 280px; min-width: 180px; max-width: 34%; overflow: auto; border-right: 1px solid var(--border); padding: 4px 0; flex: none; }
 .cd-stat { font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cd-stat .add { color: var(--ok); } .cd-stat .del { color: var(--bad); }
+
+.cd-meta .badge { flex: none; }
