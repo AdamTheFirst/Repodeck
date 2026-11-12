@@ -336,6 +336,12 @@ class SetupForm : Form
             k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
             k.SetValue("EstimatedSize", (int)(DirSize(installDir) / 1024), RegistryValueKind.DWord);
         }
+        // Notifications appear under the app's own name and icon instead of "Windows PowerShell".
+        using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\Repodeck.App"))
+        {
+            k.SetValue("DisplayName", AppName);
+            k.SetValue("IconUri", Path.Combine(installDir, "ui", "icon-256.png"));
+        }
         Log(allOk ? "Done." : "Done, but some required tools are missing. Repodeck will tell you which when it starts.");
         return allOk;
     }
@@ -368,7 +374,7 @@ class SetupForm : Form
         {
             try { if (File.Exists(lnk)) { File.Delete(lnk); Log("Removed " + lnk); } } catch (Exception e) { Log("Could not remove " + lnk + ": " + e.Message); }
         }
-        if (!Portable) { try { Registry.CurrentUser.DeleteSubKeyTree(RegKey, false); } catch { } }
+        if (!Portable) { try { Registry.CurrentUser.DeleteSubKeyTree(RegKey, false); } catch { } try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { } }
         if (wipeData) { DeleteDir(dataDir); }
         // Remove everything we can now; this running Setup.exe (if it lives in the folder) is removed right after exit.
         if (Directory.Exists(installDir))

@@ -60,4 +60,5 @@ sizes.forEach((s, i) => {
 const outFile = path.join(__dirname, '..', 'installer', 'repodeck.ico');
 fs.writeFileSync(outFile, Buffer.concat([header, dir, ...images]));
 fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-32.png'), images[2]);
+fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-256.png'), images[6]);
 console.log(`Wrote ${outFile}`);
