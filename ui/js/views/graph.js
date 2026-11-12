@@ -33,15 +33,18 @@ export function render(view, r, sub) {
 
   // ---------- toolbar ----------
   const search = h('input', { type: 'search', placeholder: 'Search message or hash', value: '', style: { width: '200px' } });
-  const author = h('input', { type: 'search', placeholder: 'Author', style: { width: '130px' } });
+  let authors = null;   // [{ name, commits }], loaded once per visit
+  rpc('repo.authors', { id: r.id }).then((a) => { authors = a; if (!disposed) renderToolbar(); }).catch(() => { authors = []; });
   search.addEventListener('input', debounce(() => { filters.grep = search.value.trim(); reset(); }, 400));
-  author.addEventListener('input', debounce(() => { filters.author = author.value.trim(); reset(); }, 400));
   function renderToolbar() {
     mount(toolbar,
       h('select', { title: 'Repository', style: { maxWidth: '220px' }, onchange: (e) => navigate(`#/repo/${e.target.value}/graph`) },
         store.repos.map((x) => h('option', { value: x.id, selected: x.id === r.id }, x.label))),
-      h('button', { class: 'btn small', onclick: (e) => branchFilterMenu(e.currentTarget) }, icon('branch', 'sm'), filters.branches.length ? `${filters.branches.length} branch${filters.branches.length > 1 ? 'es' : ''}` : 'All branches', icon('chevronDown', 'sm')),
-      search, author,
+      h('button', { class: 'btn small', onclick: (e) => branchFilterMenu(e.currentTarget) }, icon('branch', 'sm'), filters.branches.length ? `${filters.branches.length} branch${filters.branches.length > 1 ? 'es' : ''}` : filters.remotes ? 'All branches' : 'Local branches', icon('chevronDown', 'sm')),
+      search,
+      h('select', { title: 'Only commits by this author', style: { maxWidth: '180px' }, onchange: (e) => { filters.author = e.target.value; reset(); } },
+        h('option', { value: '', selected: !filters.author }, authors ? 'Any author' : 'Any author (loading…)'),
+        (authors || (filters.author ? [{ name: filters.author }] : [])).map((a) => h('option', { value: a.name, selected: filters.author === a.name }, a.commits ? `${a.name} (${a.commits})` : a.name))),
       h('select', { title: 'Only commits after', onchange: (e) => { filters.since = e.target.value; reset(); } },
         [['', 'Any date'], ['1 week ago', 'Last week'], ['1 month ago', 'Last month'], ['3 months ago', 'Last 3 months'], ['1 year ago', 'Last year']].map(([v, l]) => h('option', { value: v, selected: filters.since === v }, l))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.remotes, onchange: (e) => { filters.remotes = e.target.checked; prefs.set('gRemotes', filters.remotes); reset(); } }), 'Remote branches'),
@@ -54,16 +57,22 @@ export function render(view, r, sub) {
   }
   function branchFilterMenu(el) {
     if (!meta) return;
-    const all = [...meta.refs.local.map((b) => b.name), ...(filters.remotes ? meta.refs.remote.map((b) => b.name) : [])];
     const chosen = new Set(filters.branches);
+    const whole = (remotes) => { filters.branches = []; prefs.set(`gbranches.${r.id}`, []); filters.remotes = remotes; prefs.set('gRemotes', remotes); reset(); };
+    const pick = (b) => ({ label: b, icon: chosen.has(b) ? 'check' : null, action: () => {
+      if (chosen.has(b)) chosen.delete(b); else chosen.add(b);
+      filters.branches = [...chosen]; prefs.set(`gbranches.${r.id}`, filters.branches); reset();
+    } });
+    const local = meta.refs.local.map((b) => b.name);
+    const remote = filters.remotes ? meta.refs.remote.map((b) => b.name) : [];
     menuBelow(el, [
-      { label: 'All branches', icon: chosen.size ? null : 'check', action: () => { filters.branches = []; prefs.set(`gbranches.${r.id}`, []); reset(); } },
+      { label: 'All branches', icon: !chosen.size && filters.remotes ? 'check' : null, action: () => whole(true) },
+      { label: 'Local branches only', icon: !chosen.size && !filters.remotes ? 'check' : null, action: () => whole(false) },
       { label: 'Current branch only', action: () => { filters.branches = [meta.summary.branch || 'HEAD']; prefs.set(`gbranches.${r.id}`, filters.branches); reset(); } },
       '-',
-      ...all.slice(0, 60).map((b) => ({ label: b, icon: chosen.has(b) ? 'check' : null, action: () => {
-        if (chosen.has(b)) chosen.delete(b); else chosen.add(b);
-        filters.branches = [...chosen]; prefs.set(`gbranches.${r.id}`, filters.branches); reset();
-      } })),
+      { header: true, label: 'Local' },
+      ...local.slice(0, 60).map(pick),
+      ...(remote.length ? ['-', { header: true, label: 'Remote' }, ...remote.slice(0, 60).map(pick)] : []),
     ]);
   }
 
@@ -88,7 +97,7 @@ export function render(view, r, sub) {
     loadingMore = true;
     try {
       const skip = commits.filter((c) => !c.uncommitted).length;
-      const res = await rpc('repo.log', { id: r.id, skip, limit: PAGE, branches: filters.branches, author: filters.author, grep: filters.grep, since: filters.since || undefined, remotes: filters.remotes, tags: filters.tags });
+      const res = await rpc('repo.log', { id: r.id, skip, limit: PAGE, branches: filters.branches, authorName: filters.author || undefined, grep: filters.grep, since: filters.since || undefined, remotes: filters.remotes, tags: filters.tags });
       if (disposed) return;
       const known = new Set(commits.map((c) => c.hash));
       const fresh = res.commits.filter((c) => !known.has(c.hash));

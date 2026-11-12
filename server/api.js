@@ -568,6 +568,7 @@ const H = {
     if (p.grep && /^[0-9a-f]{4,40}$/i.test(p.grep) && !p.skip) extra = await git.searchByHash(r, p.grep);
     return { commits: [...extra.filter((e) => !commits.some((c) => c.hash === e.hash)), ...commits] };
   },
+  'repo.authors': (p) => git.authors(repo(p)),
   'repo.graphMeta': async (p) => {
     const r = repo(p);
     const [refs, stashes, sum] = await Promise.all([git.refs(r), git.stashList(r), git.summary(r)]);

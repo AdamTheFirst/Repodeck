@@ -768,10 +768,23 @@ async function stashFiles(repo, ref) {
 
 // ---------------- log / graph ----------------
 
-async function log(repo, { skip = 0, limit = 300, branches, author, since, until, grep, remotes = true, tags = true, order = 'date', file, follow } = {}) {
+/** Pure: a --author pattern that matches exactly this name (git matches a basic regular expression against "Name <email>"). */
+function authorPattern(name) {
+  return `^${String(name).replace(/[.*[\]^$\\]/g, '\\$&')} <`;
+}
+
+/** Everyone who has commits on any branch, most commits first. */
+async function authors(repo) {
+  if (!(await hasHead(repo))) return [];
+  const o = await qout(repo, ['shortlog', '-sn', '--branches', '--remotes', 'HEAD'], { timeout: 60_000 });
+  return o.split('\n').map((l) => /^\s*(\d+)\t(.+)$/.exec(l)).filter(Boolean).map((m) => ({ name: m[2], commits: +m[1] })).slice(0, 300);
+}
+
+async function log(repo, { skip = 0, limit = 300, branches, author, authorName, since, until, grep, remotes = true, tags = true, order = 'date', file, follow } = {}) {
   const args = ['log', `--format=${P.LOG_FORMAT}`, `--skip=${+skip || 0}`, `-n${Math.min(+limit || 300, 2000)}`];
   args.push(order === 'topo' ? '--topo-order' : '--date-order');
-  if (author) args.push(`--author=${author}`, '--regexp-ignore-case');
+  if (authorName) args.push(`--author=${authorPattern(authorName)}`);
+  else if (author) args.push(`--author=${author}`, '--regexp-ignore-case');
   if (since) args.push(`--since=${since}`);
   if (until) args.push(`--until=${until}`);
   if (grep) args.push(`--grep=${grep}`, '--regexp-ignore-case');
@@ -954,7 +967,7 @@ module.exports = {
   conflictFile, resolveConflictFile, takeSide, acceptDeletion, markResolved,
   createTag, deleteTag, pushTag, deleteRemoteTag,
   stashList, stashPush, stashApply, stashDrop, stashClear, stashBranch, stashFiles,
-  log, searchByHash, commitDetail, blame, fileAt,
+  log, authors, authorPattern, searchByHash, commitDetail, blame, fileAt,
   addRemote, setRemoteUrl, removeRemote, clone, init, addToGitignore,
   worktrees, addWorktree, removeWorktree, submodules, updateSubmodules,
   compareBranches, mergedBranches, lastCommitTime, validBranchName, safeJoin, ProcError, emptyTree,

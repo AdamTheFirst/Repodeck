@@ -171,3 +171,9 @@ jobs:
   assert.equal(P.parseDispatchInputs('on: [push, workflow_dispatch]\n').hasDispatch, true);
   assert.equal(P.parseDispatchInputs('on:\n  push:\n').hasDispatch, false);
 });
+
+test('author filter matches the exact name, whatever characters it has', () => {
+  const { authorPattern } = require('../../server/git');
+  assert.equal(authorPattern('Ada Lovelace'), '^Ada Lovelace <');
+  assert.equal(authorPattern('J. R. "Bob" [x]*'), '^J\\. R\\. "Bob" \\[x\\]\\* <');
+});

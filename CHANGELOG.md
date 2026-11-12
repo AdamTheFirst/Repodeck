@@ -14,6 +14,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - GitHub page with clone status; Overview with one-click push, pull and review
 - Settings reorganised: Accounts & folders in one place, SSH connections (create, test, remove, copy keys), Git configuration, and Guides
 - An account set to SSH uses SSH for fetch, pull and push in every repository, including ones cloned with an https:// address; the repositories themselves are not changed
+- Graph: “Local branches only” in the branch filter, branches listed as Local and Remote, and the author filter is a list of everyone with commits
 - Its own window instead of a Microsoft Edge app window: own taskbar name and icon, title bar in the app colour, remembered size and position
 - Setup.exe with Install, Repair and Uninstall and a clear finish screen; it never starts the app by itself
 
