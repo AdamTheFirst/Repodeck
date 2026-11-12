@@ -25,4 +25,4 @@ Settings, logs, a status cache, pending review comments and safety copies of dis
 
 ## Reporting a problem
 
-Please open a private security advisory on the project's GitHub page, or contact the maintainer listed there. Do not file public issues for vulnerabilities.
+Please report vulnerabilities privately: on the repository's **Security** tab choose **Report a vulnerability** ([direct link](https://github.com/AdamTheFirst/Repodeck/security/advisories/new)). Do not file public issues for vulnerabilities.

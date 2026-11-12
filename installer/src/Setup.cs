@@ -378,7 +378,7 @@ class SetupForm : Form
         Heading("Choose how to install", null);
         Caption("Install for", 66);
         var me = Card("Just me", "No administrator rights needed. Installed in your user profile.", 34, 88, 222, 74, !machine);
-        var all = Card("All users", "Needs administrator rights. Installed in Program Files for everyone.", 264, 88, 222, 74, machine);
+        var all = Card("All users", "Needs administrator rights. Installed in Program Files.", 264, 88, 222, 74, machine);
         all.Badge = shield;
 
         Caption("Folder", 174);

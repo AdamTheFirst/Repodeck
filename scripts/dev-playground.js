@@ -24,7 +24,7 @@ if (!fs.existsSync(root)) {
   const svc = path.join(parent.dir, 'services');
   const api = makeRepo(svc, 'api-service', { 'src/index.js': 'console.log("hi");\n'.repeat(5), 'README.md': '# API\n' }, remotes);
   const worker = makeRepo(svc, 'job-worker', { 'main.py': 'print("hello")\n' }, remotes);
-  makeRepo(path.join(svc, 'ai'), 'translator', { 'app.py': 'x = 1\n' }, remotes);
+  makeRepo(path.join(svc, 'tools'), 'translator', { 'app.py': 'x = 1\n' }, remotes);
   // dirty: modified + untracked + staged
   write(api.dir, 'src/index.js', 'console.log("hello");\n'.repeat(3) + 'const added = true;\n');
   write(api.dir, 'notes.txt', 'scratch\n');

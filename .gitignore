@@ -12,5 +12,5 @@ coverage/
 # Build output (scripts\build.ps1)
 dist/
 
-# Third-party build inputs fetched by scriptsuild.ps1
+# Third-party build inputs fetched by scripts/build.ps1
 installer/vendor/

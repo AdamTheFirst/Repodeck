@@ -10,10 +10,16 @@ const PS_AUMID = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.
 let aumid = null;
 async function appId() {
   if (aumid) return aumid;
-  try {
-    await run('reg.exe', ['query', `HKCU\\Software\\Classes\\AppUserModelId\\${OWN_AUMID}`, '/v', 'DisplayName'], { quiet: true, timeout: 10_000 });
-    aumid = OWN_AUMID;
-  } catch { aumid = PS_AUMID; }
+  let found = PS_AUMID;
+  // Setup registers the name for one user (HKCU) or for everyone (HKLM).
+  for (const hive of ['HKCU', 'HKLM']) {
+    try {
+      await run('reg.exe', ['query', `${hive}\\Software\\Classes\\AppUserModelId\\${OWN_AUMID}`, '/v', 'DisplayName'], { quiet: true, timeout: 10_000 });
+      found = OWN_AUMID;
+      break;
+    } catch { /* not registered there */ }
+  }
+  aumid = found;
   return aumid;
 }
 const script = (id) => [

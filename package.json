@@ -1,9 +1,12 @@
 {
   "name": "repodeck",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "description": "A lightweight local app for many git repositories: source control, commit graph, pull requests and GitHub Actions status in one window.",
   "private": true,
   "license": "MIT",
+  "homepage": "https://github.com/AdamTheFirst/Repodeck",
+  "repository": { "type": "git", "url": "git+https://github.com/AdamTheFirst/Repodeck.git" },
+  "bugs": { "url": "https://github.com/AdamTheFirst/Repodeck/issues" },
   "main": "server/main.js",
   "engines": {
     "node": ">=20"
