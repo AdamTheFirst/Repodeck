@@ -23,8 +23,15 @@ function open() {
   if (!url) return;
   const edge = process.platform === 'win32' ? findEdge() : null;
   if (edge) {
-    spawn(edge, [`--app=${url}`, `--user-data-dir=${path.join(paths.data, 'edge-profile')}`, '--no-first-run', '--no-default-browser-check',
-      '--window-size=1440,900', '--disable-features=Translate'], { detached: true, stdio: 'ignore' }).unref();
+    // The window uses its own Edge profile. Left alone, Edge signs that profile in with the Windows
+    // account, turns on sync and installs the user's synced extensions, which then open their own
+    // welcome tabs. The app window must be just a window: no sign-in, no sync, no extensions.
+    const old = path.join(paths.data, 'edge-profile'); // profile from earlier versions, already synced
+    fs.rm(old, { recursive: true, force: true }, () => {});
+    spawn(edge, [`--app=${url}`, `--user-data-dir=${path.join(paths.data, 'window-profile')}`,
+      '--no-first-run', '--no-default-browser-check', '--disable-sync', '--disable-extensions', '--disable-component-extensions-with-background-pages',
+      '--disable-features=msImplicitSignin,msEdgeSyncConsent,msEdgeWelcomePage,Translate', '--disable-background-networking',
+      '--window-size=1440,900'], { detached: true, stdio: 'ignore' }).unref();
     return;
   }
   if (process.platform === 'win32') spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore' }).unref();
