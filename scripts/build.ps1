@@ -71,7 +71,7 @@ $zip = Join-Path $dist 'payload.zip'
 $buildInfo = Join-Path $dist 'BuildInfo.cs'
 Set-Content -Path $buildInfo -Encoding UTF8 -Value "static class BuildInfo { public const string Version = `"$version`"; }"
 $setup = Join-Path $dist "repodeck-setup-$version.exe"
-& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/resource:$zip,payload.zip" "/out:$setup" `
+& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/resource:$zip,payload.zip" "/resource:$(Join-Path $root 'ui\icon-256.png'),logo.png" "/out:$setup" `
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
   (Join-Path $root 'installer\src\Setup.cs') $buildInfo
 if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }

@@ -1,14 +1,18 @@
-// Repodeck Setup: install, repair and uninstall for the current user. No administrator rights.
+// Repodeck Setup: install, update, repair and uninstall, for one user or for everyone on the computer.
+// A per-user install needs no administrator rights; an install for everyone asks Windows for them once.
 // Built with the C# compiler that ships with Windows (.NET Framework 4.x), so it runs on a clean machine.
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -23,277 +27,637 @@ class Tool
     public bool Ok { get { return Found != null && Found >= Min; } }
 }
 
+static class Ui
+{
+    public static readonly Color Rail = Color.FromArgb(15, 22, 20);
+    public static readonly Color Mint = Color.FromArgb(69, 214, 176);
+    public static readonly Color Accent = Color.FromArgb(18, 135, 107);
+    public static readonly Color AccentHover = Color.FromArgb(14, 116, 92);
+    public static readonly Color Text = Color.FromArgb(27, 31, 36);
+    public static readonly Color Muted = Color.FromArgb(91, 100, 112);
+    public static readonly Color Border = Color.FromArgb(218, 223, 229);
+    public static readonly Color Bar = Color.FromArgb(246, 247, 249);
+    public static readonly Color Good = Color.FromArgb(31, 122, 67);
+    public static readonly Color Bad = Color.FromArgb(180, 35, 44);
+    public static readonly Color Warn = Color.FromArgb(154, 97, 0);
+
+    public static GraphicsPath Round(Rectangle r, int radius)
+    {
+        int d = radius * 2;
+        var p = new GraphicsPath();
+        p.AddArc(r.X, r.Y, d, d, 180, 90);
+        p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        p.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        p.CloseFigure();
+        return p;
+    }
+}
+
+/// A flat button in the app's colours. Primary = filled; the others are outlined.
+class FlatBtn : Button
+{
+    public bool Primary, Danger;
+    bool hot;
+    public FlatBtn()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        Cursor = Cursors.Hand;
+    }
+    protected override void OnMouseEnter(EventArgs e) { hot = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hot = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnEnabledChanged(EventArgs e) { Invalidate(); base.OnEnabledChanged(e); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Parent != null ? Parent.BackColor : Color.White);
+        var r = new Rectangle(0, 0, Width - 1, Height - 1);
+        Color fill = Primary ? (Danger ? Ui.Bad : Ui.Accent) : Color.White;
+        if (hot && Enabled) fill = Primary ? (Danger ? Color.FromArgb(150, 28, 36) : Ui.AccentHover) : Color.FromArgb(240, 243, 246);
+        if (!Enabled) fill = Primary ? Color.FromArgb(170, 205, 196) : Color.FromArgb(246, 247, 249);
+        using (var path = Ui.Round(r, Height / 6))
+        {
+            using (var b = new SolidBrush(fill)) g.FillPath(b, path);
+            if (!Primary) using (var p = new Pen(Focused ? Ui.Accent : Ui.Border)) g.DrawPath(p, path);
+            else if (Focused) using (var p = new Pen(Color.FromArgb(120, 255, 255, 255))) { var inner = new Rectangle(2, 2, Width - 5, Height - 5); using (var ip = Ui.Round(inner, Height / 6)) g.DrawPath(p, ip); }
+        }
+        Color fg = Primary ? Color.White : (Enabled ? Ui.Text : Color.FromArgb(150, 156, 165));
+        int imgW = Image != null ? Image.Width + 6 : 0;
+        Size ts = TextRenderer.MeasureText(g, Text, Font, Size.Empty, TextFormatFlags.NoPadding);
+        int x = (Width - ts.Width - imgW) / 2;
+        if (Image != null) g.DrawImage(Image, x, (Height - Image.Height) / 2);
+        TextRenderer.DrawText(g, Text, Font, new Point(x + imgW, (Height - ts.Height) / 2), fg, TextFormatFlags.NoPadding);
+    }
+}
+
+/// A selectable card: a radio button with a title and a line of explanation.
+class Choice : Control
+{
+    public string Title = "", Desc = "";
+    public Image Badge;
+    bool on, hot;
+    public event EventHandler Picked;
+    public bool Checked { get { return on; } set { on = value; Invalidate(); } }
+    public Choice()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.Selectable, true);
+        Cursor = Cursors.Hand; TabStop = true;
+    }
+    void Pick() { if (!Enabled) return; if (Parent != null) foreach (Control c in Parent.Controls) { var o = c as Choice; if (o != null && o != this) o.Checked = false; } Checked = true; if (Picked != null) Picked(this, EventArgs.Empty); }
+    protected override void OnClick(EventArgs e) { Focus(); Pick(); base.OnClick(e); }
+    protected override void OnKeyDown(KeyEventArgs e) { if (e.KeyCode == Keys.Space || e.KeyCode == Keys.Enter) Pick(); base.OnKeyDown(e); }
+    protected override void OnMouseEnter(EventArgs e) { hot = true; Invalidate(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hot = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+    protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.Clear(Parent != null ? Parent.BackColor : Color.White);
+        float k = DeviceDpi / 96f;
+        var r = new Rectangle(1, 1, Width - 3, Height - 3);
+        using (var path = Ui.Round(r, (int)(8 * k)))
+        {
+            using (var b = new SolidBrush(on ? Color.FromArgb(236, 248, 244) : (hot ? Color.FromArgb(248, 249, 251) : Color.White))) g.FillPath(b, path);
+            using (var p = new Pen(on ? Ui.Accent : (Focused ? Ui.Accent : Ui.Border), on ? 2f : 1f)) g.DrawPath(p, path);
+        }
+        int cx = (int)(14 * k), cy = (int)(14 * k), d = (int)(16 * k);
+        using (var p = new Pen(on ? Ui.Accent : Color.FromArgb(150, 156, 165), 1.6f)) g.DrawEllipse(p, cx, cy, d, d);
+        if (on) using (var b = new SolidBrush(Ui.Accent)) g.FillEllipse(b, cx + d / 4f, cy + d / 4f, d / 2f, d / 2f);
+        int tx = cx + d + (int)(10 * k);
+        using (var f = new Font("Segoe UI Semibold", 9.5f))
+        {
+            TextRenderer.DrawText(g, Title, f, new Point(tx, (int)(11 * k)), Enabled ? Ui.Text : Ui.Muted, TextFormatFlags.NoPadding);
+            if (Badge != null) { Size ts = TextRenderer.MeasureText(g, Title, f, Size.Empty, TextFormatFlags.NoPadding); g.DrawImage(Badge, tx + ts.Width + (int)(6 * k), (int)(12 * k)); }
+        }
+        TextRenderer.DrawText(g, Desc, Font, new Rectangle(tx, (int)(32 * k), Width - tx - (int)(10 * k), Height - (int)(36 * k)), Ui.Muted, TextFormatFlags.NoPadding | TextFormatFlags.WordBreak);
+    }
+}
+
 class SetupForm : Form
 {
     const string AppName = "Repodeck";
     const string RegKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Repodeck";
 
-    readonly string installDir;
-    // Same override the app itself honours, so tests never touch the real settings or a running copy.
-    readonly string dataDir = Environment.GetEnvironmentVariable("REPODECK_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Repodeck");
+    // Command line (see SetupProgram.Main)
+    public static string DirOverride;    // /dir "<folder>": install somewhere else
+    public static string DataDirOverride; // /datadir: the settings folder of the user who started Setup (kept across the administrator prompt)
+    public static bool Portable;         // /portable: no shortcuts, no Installed apps entry
+    public static bool AllUsersArg;      // /allusers: install for everyone (needs administrator rights)
+    public static bool DesktopArg, NoToolsArg, WipeArg;
+    public static string AutoRun;        // /run <action>: start that action at once, with the window (used after the administrator prompt)
+    public static string Snapshot, SnapshotPage; // /snapshot <png> [/page <name>]: save a picture of a page and exit (layout checks)
+
+    string installDir;
+    bool machine;                        // true = for everyone on this computer
+    readonly string dataDir;
     readonly List<Tool> tools = new List<Tool>();
     readonly bool silent;
-    readonly string silentAction;
+    readonly string startAction;
     public int ExitCode;
-    public static string DirOverride;   // /dir "<folder>": install somewhere else
-    public static bool Portable;        // /portable: no shortcuts, no Apps entry
-    public static string Snapshot;      // /snapshot <png>: save a picture of the window and exit (layout checks)
 
-    Label title, subtitle, status, toolsTitle, hint;
-    Panel toolsPanel;
-    CheckBox chkDesktop, chkTools, chkData, chkLaunch;
-    Button btnPrimary, btnRepair, btnUninstall, btnClose;
+    Panel rail, content, bar;
+    FlatBtn btnBack, btnNext, btnCancel;
+    Action onNext, onBack;
+    string[] steps = new string[0];
+    int stepIndex;
+    Image logo, shield;
     TextBox log;
     ProgressBar progress;
+    Label progressText;
+    readonly StringBuilder logText = new StringBuilder();
     bool busy;
     string installedVersion;
+    // choices made on the pages
+    bool wantDesktop, wantTools = true, wipeData;
+
+    int S(int v) { return (int)Math.Round(v * DeviceDpi / 96.0); }
 
     public SetupForm(string action, bool silent)
     {
         this.silent = silent;
-        this.silentAction = action;
-        installDir = DirOverride ?? ExistingInstallDir() ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Repodeck");
+        this.startAction = action;
+        dataDir = DataDirOverride ?? Environment.GetEnvironmentVariable("REPODECK_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Repodeck");
+        Detect();
+        wantDesktop = DesktopArg; wantTools = !NoToolsArg; wipeData = WipeArg;
         tools.Add(new Tool { Name = "Git", Exe = "git", Args = "--version", Pattern = @"(\d+\.\d+\.\d+)", Min = new Version(2, 30, 0), WingetId = "Git.Git" });
         tools.Add(new Tool { Name = "GitHub CLI", Exe = "gh", Args = "--version", Pattern = @"(\d+\.\d+\.\d+)", Min = new Version(2, 40, 0), WingetId = "GitHub.cli" });
         tools.Add(new Tool { Name = "Node.js", Exe = "node", Args = "--version", Pattern = @"v(\d+\.\d+\.\d+)", Min = new Version(20, 0, 0), WingetId = "OpenJS.NodeJS.LTS" });
         BuildUi();
         Shown += delegate
         {
-            RefreshState();
-            if (Snapshot != null) { if (action == "uninstall" && IsInstalled()) ShowUninstallChoice(); using (var bmp = new Bitmap(Width, Height)) { DrawToBitmap(bmp, new Rectangle(0, 0, Width, Height)); bmp.Save(Snapshot, System.Drawing.Imaging.ImageFormat.Png); } Close(); return; }
-            if (silent) Run(silentAction);
-            else if (action == "uninstall" && IsInstalled()) ShowUninstallChoice();
+            ProbeTools();
+            installedVersion = InstalledVersion();
+            if (Snapshot != null) { ShowSnapshotPage(); return; }
+            if (silent) { Run(startAction); return; }
+            if (AutoRun != null) { Run(AutoRun); return; }
+            if (startAction == "uninstall" && IsInstalled()) PageUninstall();
+            else if (IsInstalled()) PageMaintenance();
+            else PageWelcome();
         };
     }
 
-    // ------------------------------------------------------------------ UI
+    /// Where is it installed, and for whom? An existing install decides; otherwise the command line or the default.
+    void Detect()
+    {
+        string m = ExistingInstallDir(true), u = ExistingInstallDir(false);
+        if (DirOverride != null) { installDir = DirOverride; machine = AllUsersArg; }
+        else if (m != null) { installDir = m; machine = true; }
+        else if (u != null) { installDir = u; machine = false; }
+        else { machine = AllUsersArg; installDir = DefaultDir(machine); }
+    }
+    static string DefaultDir(bool forEveryone)
+    {
+        if (!forEveryone) return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Repodeck");
+        string pf = Environment.GetEnvironmentVariable("ProgramW6432");
+        if (string.IsNullOrEmpty(pf)) pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        return Path.Combine(pf, "Repodeck");
+    }
+    static bool IsElevated()
+    {
+        try { using (var id = WindowsIdentity.GetCurrent()) return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator); } catch { return false; }
+    }
+
+    // ------------------------------------------------------------------ window
     void BuildUi()
     {
         Text = AppName + " Setup";
         Font = new Font("Segoe UI", 9f);
-        AutoScaleMode = AutoScaleMode.Dpi;
-        ClientSize = new Size(600, 520);
+        AutoScaleMode = AutoScaleMode.None;
+        ClientSize = new Size(S(720), S(480));
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.White;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        try { using (var s = Assembly.GetExecutingAssembly().GetManifestResourceStream("logo.png")) if (s != null) logo = Image.FromStream(s); } catch { }
+        try { shield = new Bitmap(SystemIcons.Shield.ToBitmap(), new Size(S(16), S(16))); } catch { }
 
-        var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Color.FromArgb(20, 56, 47) };
-        title = new Label { Text = AppName, ForeColor = Color.White, Font = new Font("Segoe UI Semibold", 17f), AutoSize = true, Location = new Point(22, 14) };
-        subtitle = new Label { Text = "Version " + BuildInfo.Version, ForeColor = Color.FromArgb(150, 214, 196), AutoSize = true, Location = new Point(24, 50) };
-        header.Controls.Add(title); header.Controls.Add(subtitle);
-        Controls.Add(header);
+        rail = new Panel { Location = new Point(0, 0), Size = new Size(S(200), S(480)), BackColor = Ui.Rail };
+        rail.Paint += PaintRail;
+        bar = new Panel { Location = new Point(S(200), S(420)), Size = new Size(S(520), S(60)), BackColor = Ui.Bar };
+        bar.Paint += delegate(object s, PaintEventArgs e) { using (var p = new Pen(Ui.Border)) e.Graphics.DrawLine(p, 0, 0, bar.Width, 0); };
+        content = new Panel { Location = new Point(S(200), 0), Size = new Size(S(520), S(420)), BackColor = Color.White };
+        Controls.Add(rail); Controls.Add(bar); Controls.Add(content);
 
-        status = new Label { Location = new Point(22, 100), Size = new Size(556, 38), Text = "", AutoEllipsis = true };
-        Controls.Add(status);
-
-        toolsTitle = new Label { Text = "Required tools", Font = new Font("Segoe UI Semibold", 9f), Location = new Point(22, 142), AutoSize = true };
-        Controls.Add(toolsTitle);
-        toolsPanel = new Panel { Location = new Point(22, 164), Size = new Size(556, 72) };
-        Controls.Add(toolsPanel);
-
-        chkTools = new CheckBox { Text = "Download and install missing tools with winget (official source)", Location = new Point(22, 242), AutoSize = true, Checked = true };
-        chkDesktop = new CheckBox { Text = "Create a desktop shortcut", Location = new Point(22, 266), AutoSize = true, Checked = false };
-        chkLaunch = new CheckBox { Text = "Start Repodeck when finished", Location = new Point(22, 290), AutoSize = true, Checked = false, Visible = false }; // the finish screen has an Open button instead
-        chkData = new CheckBox { Text = "Also delete my settings, logs and safety copies of discarded changes", Location = new Point(22, 266), AutoSize = true, Visible = false };
-        Controls.Add(chkTools); Controls.Add(chkDesktop); Controls.Add(chkLaunch); Controls.Add(chkData);
-
-        log = new TextBox { Location = new Point(22, 320), Size = new Size(556, 118), Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.FromArgb(247, 247, 245), BorderStyle = BorderStyle.FixedSingle, Font = new Font("Consolas", 8.5f) };
-        log.Visible = false;
-        Controls.Add(log);
-        hint = new Label { Location = new Point(22, 330), Size = new Size(556, 100), ForeColor = Color.DimGray, Text = "Setup copies Repodeck into your user profile and adds a Start menu entry.\nNothing is installed for other users and no administrator rights are needed.\n\nYou sign in to GitHub later, inside the app." };
-        Controls.Add(hint);
-        progress = new ProgressBar { Location = new Point(22, 444), Size = new Size(556, 6), Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 25, Visible = false };
-        Controls.Add(progress);
-
-        btnPrimary = MakeButton("Install", 0, true);
-        btnRepair = MakeButton("Repair", 0, true);
-        btnUninstall = MakeButton("Uninstall", 0, false);
-        btnClose = MakeButton("Close", 0, false);
-        btnPrimary.Click += delegate { Run("install"); };
-        btnRepair.Click += delegate { Run("repair"); };
-        btnUninstall.Click += delegate { ShowUninstallChoice(); };
-        btnClose.Click += delegate { Close(); };
+        btnBack = MakeBarButton("Back", false);
+        btnNext = MakeBarButton("Next", true);
+        btnCancel = MakeBarButton("Cancel", false);
+        btnBack.Click += delegate { if (onBack != null) onBack(); };
+        btnNext.Click += delegate { if (onNext != null) onNext(); };
+        btnCancel.Click += delegate { Close(); };
         FormClosing += delegate(object s, FormClosingEventArgs e) { if (busy) e.Cancel = true; };
     }
 
-    Button MakeButton(string text, int x, bool primary)
+    FlatBtn MakeBarButton(string text, bool primary)
     {
-        var b = new Button { Text = text, Size = new Size(110, 32), Location = new Point(x, 472), FlatStyle = FlatStyle.System };
-        if (primary) b.Font = new Font("Segoe UI Semibold", 9f);
-        Controls.Add(b);
+        var b = new FlatBtn { Text = text, Primary = primary, Size = new Size(S(96), S(32)), Font = primary ? new Font("Segoe UI Semibold", 9f) : Font };
+        bar.Controls.Add(b);
         return b;
     }
 
-    void LayoutButtons(params Button[] visible)
+    /// Right-aligned bar buttons. Any of them can be null (hidden).
+    void Buttons(string back, string next, string cancel, bool nextShield = false, bool nextDanger = false)
     {
-        foreach (var b in new[] { btnPrimary, btnRepair, btnUninstall, btnClose }) b.Visible = false;
-        int x = 578;
-        for (int i = visible.Length - 1; i >= 0; i--)
+        btnBack.Visible = back != null; btnNext.Visible = next != null; btnCancel.Visible = cancel != null;
+        if (back != null) btnBack.Text = back;
+        if (cancel != null) btnCancel.Text = cancel;
+        if (next != null)
         {
-            x -= visible[i].Width;
-            visible[i].Location = new Point(x, 472);
-            visible[i].Visible = true;
-            x -= 8;
+            btnNext.Text = next; btnNext.Danger = nextDanger; btnNext.Image = nextShield ? shield : null;
+            Size ts = TextRenderer.MeasureText(next, btnNext.Font);
+            btnNext.Width = Math.Max(S(96), ts.Width + S(34) + (nextShield ? S(22) : 0));
         }
-        AcceptButton = visible.Length > 0 ? visible[0] : null;
+        int x = bar.Width - S(20);
+        foreach (var b in new[] { btnCancel, btnNext, btnBack })
+        {
+            if (!b.Visible) continue;
+            x -= b.Width; b.Location = new Point(x, S(14)); x -= S(8);
+        }
+        AcceptButton = btnNext.Visible ? (IButtonControl)btnNext : btnCancel;
+        CancelButton = btnCancel.Visible ? btnCancel : null;
+        btnNext.Invalidate();
     }
 
-    bool uninstallMode;
-    void ShowUninstallChoice()
+    void PaintRail(object sender, PaintEventArgs e)
     {
-        uninstallMode = true;
-        status.Text = "Remove Repodeck " + installedVersion + " from this computer?\nYour repositories are not touched. Git, GitHub CLI and Node.js stay installed.";
-        chkTools.Visible = chkDesktop.Visible = chkLaunch.Visible = false;
-        chkData.Visible = true;
-        toolsTitle.Visible = toolsPanel.Visible = false;
-        chkData.Location = new Point(22, 150);
-        hint.Text = "Removes the program files, the shortcuts and the entry in Installed apps.\nYour settings are kept unless you tick the box above.";
-        hint.Location = new Point(22, 190);
-        btnPrimary.Text = "Uninstall";
-        btnClose.Text = "Cancel";
-        LayoutButtons(btnUninstallConfirm(), btnClose);
-    }
-    Button confirmBtn, openBtn;
-    Button btnUninstallConfirm()
-    {
-        if (confirmBtn == null)
+        var g = e.Graphics;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        if (logo != null) g.DrawImage(logo, new Rectangle(S(24), S(28), S(44), S(44)));
+        using (var f = new Font("Segoe UI Semibold", 15f)) TextRenderer.DrawText(g, AppName, f, new Point(S(22), S(84)), Color.White, TextFormatFlags.NoPadding);
+        TextRenderer.DrawText(g, "Version " + BuildInfo.Version, Font, new Point(S(24), S(116)), Color.FromArgb(140, 160, 154), TextFormatFlags.NoPadding);
+        int y = S(176);
+        for (int i = 0; i < steps.Length; i++)
         {
-            confirmBtn = MakeButton("Uninstall", 0, true);
-            confirmBtn.Click += delegate { Run("uninstall"); };
+            bool cur = i == stepIndex, done = i < stepIndex;
+            int d = S(8);
+            using (var b = new SolidBrush(cur || done ? Ui.Mint : Color.FromArgb(70, 84, 80))) g.FillEllipse(b, S(26), y + S(5), d, d);
+            if (i < steps.Length - 1) using (var p = new Pen(done ? Ui.Mint : Color.FromArgb(50, 62, 59), 1.5f)) g.DrawLine(p, S(26) + d / 2f, y + S(5) + d + S(3), S(26) + d / 2f, y + S(30));
+            using (var f = new Font(cur ? "Segoe UI Semibold" : "Segoe UI", 9.5f))
+                TextRenderer.DrawText(g, steps[i], f, new Point(S(46), y), cur ? Color.White : (done ? Color.FromArgb(190, 205, 200) : Color.FromArgb(120, 136, 131)), TextFormatFlags.NoPadding);
+            y += S(34);
         }
-        return confirmBtn;
     }
 
-    void RefreshState()
+    void Steps(int index, params string[] names) { steps = names; stepIndex = index; rail.Invalidate(); }
+
+    // ------------------------------------------------------------------ page building blocks
+    void Clear() { content.SuspendLayout(); while (content.Controls.Count > 0) { var c = content.Controls[0]; content.Controls.RemoveAt(0); if (c != log && c != progress) c.Dispose(); } content.ResumeLayout(); }
+
+    Label Heading(string title, string sub)
     {
-        installedVersion = InstalledVersion();
-        bool installed = IsInstalled();
-        RefreshPath();
-        toolsPanel.Controls.Clear();
-        int y = 0;
-        bool anyMissing = false;
+        var t = new Label { Text = title, Font = new Font("Segoe UI Semibold", 15f), ForeColor = Ui.Text, Location = new Point(S(32), S(30)), Size = new Size(S(456), S(34)), AutoEllipsis = true };
+        content.Controls.Add(t);
+        var s = new Label { Text = sub ?? "", ForeColor = Ui.Muted, Location = new Point(S(34), S(68)), Size = new Size(S(452), S(40)) };
+        content.Controls.Add(s);
+        return s;
+    }
+    Label Para(string text, int y, int h, Color? color = null, Font font = null)
+    {
+        var l = new Label { Text = text, ForeColor = color ?? Ui.Text, Location = new Point(S(34), S(y)), Size = new Size(S(452), S(h)) };
+        if (font != null) l.Font = font;
+        content.Controls.Add(l);
+        return l;
+    }
+    Label Caption(string text, int y)
+    {
+        var l = new Label { Text = text, Font = new Font("Segoe UI Semibold", 9f), ForeColor = Ui.Text, Location = new Point(S(34), S(y)), AutoSize = true };
+        content.Controls.Add(l);
+        return l;
+    }
+    CheckBox Check(string text, int y, bool value, EventHandler changed)
+    {
+        var c = new CheckBox { Text = text, Location = new Point(S(34), S(y)), AutoSize = true, Checked = value, ForeColor = Ui.Text };
+        if (changed != null) c.CheckedChanged += changed;
+        content.Controls.Add(c);
+        return c;
+    }
+    Choice Card(string title, string desc, int x, int y, int w, int h, bool on)
+    {
+        var c = new Choice { Title = title, Desc = desc, Location = new Point(S(x), S(y)), Size = new Size(S(w), S(h)), Font = Font };
+        content.Controls.Add(c);
+        c.Checked = on;
+        return c;
+    }
+    /// The list of required tools with a tick or a cross each. Returns the height used.
+    int ToolRows(int y)
+    {
         foreach (var t in tools)
         {
-            t.Found = Probe(t);
-            if (!t.Ok) anyMissing = true;
-            var dot = new Label { Text = t.Ok ? "✔" : "✖", ForeColor = t.Ok ? Color.FromArgb(31, 122, 67) : Color.FromArgb(180, 35, 44), Location = new Point(2, y), Size = new Size(18, 20) };
-            var name = new Label { Text = t.Name, Location = new Point(24, y), Size = new Size(120, 20) };
-            var val = new Label { Text = t.Found == null ? "not installed" : (t.Ok ? "version " + t.Found : "version " + t.Found + " is too old (needs " + t.Min + ")"), ForeColor = t.Ok ? Color.DimGray : Color.FromArgb(180, 35, 44), Location = new Point(150, y), Size = new Size(400, 20) };
-            toolsPanel.Controls.Add(dot); toolsPanel.Controls.Add(name); toolsPanel.Controls.Add(val);
-            y += 23;
+            content.Controls.Add(new Label { Text = t.Ok ? "✔" : "✖", ForeColor = t.Ok ? Ui.Good : Ui.Bad, Location = new Point(S(36), S(y)), Size = new Size(S(18), S(20)) });
+            content.Controls.Add(new Label { Text = t.Name, ForeColor = Ui.Text, Location = new Point(S(58), S(y)), Size = new Size(S(100), S(20)) });
+            content.Controls.Add(new Label { Text = t.Found == null ? "not installed" : (t.Ok ? "version " + t.Found : "version " + t.Found + " is too old (needs " + t.Min + ")"), ForeColor = t.Ok ? Ui.Muted : Ui.Bad, Location = new Point(S(160), S(y)), Size = new Size(S(326), S(20)) });
+            y += 22;
         }
-        chkTools.Visible = anyMissing && !uninstallMode;
-        chkTools.Checked = anyMissing;
-        int oy = anyMissing ? 266 : 242;
-        chkDesktop.Location = new Point(22, oy);
-        chkDesktop.Visible = !Portable && !uninstallMode;
-        if (uninstallMode) return;
-        if (installed)
+        return y;
+    }
+    void ProbeTools() { RefreshPath(); foreach (var t in tools) t.Found = Probe(t); }
+    bool AnyToolMissing() { foreach (var t in tools) if (!t.Ok) return true; return false; }
+    string ScopeText() { return machine ? "for everyone on this computer" : "for you only"; }
+
+    // ------------------------------------------------------------------ pages
+    void PageWelcome()
+    {
+        Clear(); Steps(0, "Welcome", "Options", "Install", "Finish");
+        Heading("Welcome to Repodeck Setup", "Version " + BuildInfo.Version);
+        Para("Repodeck shows all your git repositories in one window: source control, commit graph, pull requests and GitHub Actions.", 112, 40);
+        Para("Setup will:", 166, 20, null, new Font("Segoe UI Semibold", 9f));
+        Para("•  copy the app to this computer and add it to the Start menu\n•  check for Git, GitHub CLI and Node.js, and offer to install what is missing\n•  never change your repositories or your git settings", 190, 64, Ui.Muted);
+        Para("You sign in to GitHub later, inside the app.", 270, 20, Ui.Muted);
+        onBack = null; onNext = PageOptions;
+        Buttons(null, "Next", "Cancel");
+        btnNext.Focus();
+    }
+
+    void PageOptions()
+    {
+        Clear(); Steps(1, "Welcome", "Options", "Install", "Finish");
+        Heading("Choose how to install", null);
+        Caption("Install for", 66);
+        var me = Card("Just me", "No administrator rights needed. Installed in your user profile.", 34, 88, 222, 74, !machine);
+        var all = Card("All users", "Needs administrator rights. Installed in Program Files for everyone.", 264, 88, 222, 74, machine);
+        all.Badge = shield;
+
+        Caption("Folder", 174);
+        var folder = new TextBox { Text = installDir, ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.FromArgb(250, 251, 252), Location = new Point(S(34), S(196)), Size = new Size(S(352), S(24)) };
+        content.Controls.Add(folder);
+        var change = new FlatBtn { Text = "Change…", Location = new Point(S(394), S(195)), Size = new Size(S(92), S(26)), Font = Font };
+        content.Controls.Add(change);
+        bool customDir = DirOverride != null;
+        Action sync = delegate
         {
-            bool same = installedVersion == BuildInfo.Version;
-            status.Text = "Repodeck " + installedVersion + " is installed in\n" + installDir;
-            btnRepair.Text = same ? "Repair" : "Update to " + BuildInfo.Version;
-            LayoutButtons(btnRepair, btnUninstall, btnClose);
+            if (!customDir) installDir = DefaultDir(machine);
+            folder.Text = installDir;
+            Buttons("Back", "Install", "Cancel", machine && !IsElevated());
+        };
+        me.Picked += delegate { machine = false; sync(); };
+        all.Picked += delegate { machine = true; sync(); };
+        change.Click += delegate
+        {
+            using (var d = new FolderBrowserDialog { Description = "Repodeck is installed in a folder named Repodeck inside the folder you choose.", ShowNewFolderButton = true })
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                string p = d.SelectedPath;
+                // Always its own folder, so that uninstalling can never remove anything else.
+                if (!string.Equals(Path.GetFileName(p.TrimEnd('\\')), "Repodeck", StringComparison.OrdinalIgnoreCase)) p = Path.Combine(p, "Repodeck");
+                installDir = p; customDir = true; DirOverride = p; sync();
+            }
+        };
+
+        Caption("Required tools", 234);
+        int y = ToolRows(256);
+        bool missing = AnyToolMissing();
+        if (missing) { Check("Download and install the missing tools with winget (official source)", y + 2, wantTools, delegate(object s, EventArgs e) { wantTools = ((CheckBox)s).Checked; }); y += 26; }
+        if (!Portable) Check("Create a desktop shortcut", y + 6, wantDesktop, delegate(object s, EventArgs e) { wantDesktop = ((CheckBox)s).Checked; });
+
+        onBack = PageWelcome; onNext = delegate { Run("install"); };
+        sync();
+        btnNext.Focus();
+    }
+
+    void PageMaintenance()
+    {
+        Clear(); Steps(0, "Choose", "Working", "Finish");
+        bool same = installedVersion == BuildInfo.Version;
+        Heading("Repodeck " + installedVersion + " is installed", "Installed " + ScopeText() + " in\n" + installDir);
+        Caption("What would you like to do?", 120);
+        var fix = Card(same ? "Repair" : "Update to version " + BuildInfo.Version, same ? "Replaces the program files and shortcuts. Your settings are kept." : "Replaces the program files with version " + BuildInfo.Version + ". Your settings are kept.", 34, 144, 452, 62, true);
+        var remove = Card("Uninstall", "Removes the app and its shortcuts. Your repositories are not touched.", 34, 214, 452, 62, false);
+        Caption("Required tools", 292);
+        ToolRows(314);
+        bool needShield = machine && !IsElevated();
+        onBack = null;
+        onNext = delegate { if (remove.Checked) PageUninstall(); else Run("repair"); };
+        Action relabel = delegate { Buttons(null, remove.Checked ? "Next" : (same ? "Repair" : "Update"), "Close", needShield && !remove.Checked); };
+        fix.Picked += delegate { relabel(); }; remove.Picked += delegate { relabel(); };
+        relabel();
+        btnNext.Focus();
+    }
+
+    void PageUninstall()
+    {
+        Clear(); Steps(0, "Choose", "Working", "Finish");
+        Heading("Uninstall Repodeck " + installedVersion + "?", "Installed " + ScopeText() + " in\n" + installDir);
+        Para("This removes the program files, the shortcuts and the entry in Installed apps.", 124, 20);
+        Para("•  Your repositories are not touched.\n•  Git, GitHub CLI and Node.js stay installed.\n•  Your settings are kept, unless you tick the box below.", 150, 60, Ui.Muted);
+        Check("Also delete my settings, logs and safety copies of discarded changes", 222, wipeData, delegate(object s, EventArgs e) { wipeData = ((CheckBox)s).Checked; });
+        onBack = startAction == "uninstall" ? (Action)null : PageMaintenance;
+        onNext = delegate { Run("uninstall"); };
+        Buttons(startAction == "uninstall" ? null : "Back", "Uninstall", "Cancel", machine && !IsElevated(), true);
+        btnCancel.Focus();
+    }
+
+    void PageProgress(string action)
+    {
+        Clear();
+        if (action == "install") Steps(2, "Welcome", "Options", "Install", "Finish"); else Steps(1, "Choose", "Working", "Finish");
+        Heading(action == "uninstall" ? "Removing Repodeck…" : (action == "repair" ? (installedVersion == BuildInfo.Version ? "Repairing Repodeck…" : "Updating Repodeck…") : "Installing Repodeck…"), "This usually takes a few seconds. Installing missing tools can take a few minutes.");
+        progressText = Para("Starting…", 122, 20);
+        if (progress == null) progress = new ProgressBar { Minimum = 0, Maximum = 100 };
+        progress.Location = new Point(S(34), S(148)); progress.Size = new Size(S(452), S(8)); progress.Style = ProgressBarStyle.Marquee; progress.MarqueeAnimationSpeed = 25;
+        content.Controls.Add(progress);
+        AddLog(176, 224, true);
+        onBack = null; onNext = null;
+        Buttons(null, null, "Cancel");
+        btnCancel.Enabled = false;
+    }
+
+    void AddLog(int y, int h, bool visible)
+    {
+        if (log == null) log = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.FromArgb(250, 251, 252), BorderStyle = BorderStyle.FixedSingle, Font = new Font("Consolas", 8.5f) };
+        log.Location = new Point(S(34), S(y)); log.Size = new Size(S(452), S(h)); log.Visible = visible;
+        log.Text = logText.ToString(); log.SelectionStart = log.TextLength; log.ScrollToCaret();
+        content.Controls.Add(log);
+    }
+
+    void PageFinish(string action, string error, bool toolsMissing)
+    {
+        Clear();
+        if (action == "install") Steps(3, "Welcome", "Options", "Install", "Finish"); else Steps(2, "Choose", "Working", "Finish");
+        bool ok = error == null && !toolsMissing;
+        string title = error != null ? "Something went wrong" : action == "uninstall" ? "Repodeck was removed" : toolsMissing ? "Installed, but tools are missing" : action == "repair" ? "Repodeck is up to date" : "Repodeck is installed";
+        Color tone = error != null ? Ui.Bad : toolsMissing ? Ui.Warn : Ui.Good;
+        var mark = new Panel { Location = new Point(S(34), S(32)), Size = new Size(S(40), S(40)), BackColor = Color.White };
+        mark.Paint += delegate(object s, PaintEventArgs e)
+        {
+            var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var b = new SolidBrush(tone)) g.FillEllipse(b, 0, 0, mark.Width - 1, mark.Height - 1);
+            using (var p = new Pen(Color.White, S(3)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+            {
+                float w = mark.Width;
+                if (ok) g.DrawLines(p, new[] { new PointF(w * .28f, w * .52f), new PointF(w * .44f, w * .68f), new PointF(w * .73f, w * .34f) });
+                else { g.DrawLine(p, w * .5f, w * .24f, w * .5f, w * .58f); g.DrawLine(p, w * .5f, w * .74f, w * .5f, w * .75f); }
+            }
+        };
+        content.Controls.Add(mark);
+        content.Controls.Add(new Label { Text = title, Font = new Font("Segoe UI Semibold", 15f), ForeColor = Ui.Text, Location = new Point(S(86), S(35)), Size = new Size(S(400), S(34)) });
+        int y = 92;
+        if (error != null)
+        {
+            Para(error, y, 40, Ui.Bad); y += 46;
+            Para("Nothing else was changed. The details are below and in\n" + Path.Combine(dataDir, "install.log"), y, 36, Ui.Muted); y += 44;
+            AddLog(y, 400 - y, true);
+        }
+        else if (action == "uninstall")
+        {
+            Para("The app, its shortcuts and its entry in Installed apps are gone.", y, 20); y += 26;
+            Para((wipeData ? "Your settings were deleted too." : "Your settings were kept in\n" + dataDir) + "\n\nGit, GitHub CLI and Node.js are still installed.", y, 80, Ui.Muted);
+        }
+        else if (toolsMissing)
+        {
+            Para("Repodeck cannot run until the tools marked below are installed.\nInstall them, then run Setup again and choose Repair.", y, 40, Ui.Warn); y += 50;
+            y = ToolRows(y) + 8;
+            AddLog(y, 400 - y, true);
         }
         else
         {
-            status.Text = "Installs for you only, in\n" + installDir + "   (no administrator rights needed)";
-            LayoutButtons(btnPrimary, btnClose);
+            Para("Version " + BuildInfo.Version + ", installed " + ScopeText() + ".", y, 20); y += 26;
+            Para("You will find Repodeck in the Start menu" + (wantDesktop && action == "install" ? " and on the desktop" : "") + ".\nNothing was started: open it when you are ready.", y, 40, Ui.Muted); y += 60;
+            var details = new LinkLabel { Text = "Show details", Location = new Point(S(34), S(y)), AutoSize = true, LinkColor = Ui.Accent, ActiveLinkColor = Ui.AccentHover, LinkBehavior = LinkBehavior.HoverUnderline };
+            content.Controls.Add(details);
+            AddLog(y + 24, 400 - y - 24, false);
+            details.Click += delegate { log.Visible = !log.Visible; details.Text = log.Visible ? "Hide details" : "Show details"; };
         }
+        onBack = null;
+        btnCancel.Enabled = true;
+        if (ok && action != "uninstall") { onNext = delegate { StartApp(); Close(); }; Buttons(null, "Open Repodeck", "Close"); btnNext.Focus(); }
+        else { onNext = null; Buttons(null, null, "Close"); btnCancel.Focus(); }
     }
 
-    void Log(string line)
+    void ShowSnapshotPage()
     {
-        if (InvokeRequired) { BeginInvoke(new Action<string>(Log), line); return; }
-        log.AppendText(line + Environment.NewLine);
-        try { Directory.CreateDirectory(dataDir); File.AppendAllText(Path.Combine(dataDir, "install.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + line + Environment.NewLine); } catch { }
+        string p = SnapshotPage ?? "";
+        if (p == "options") PageOptions();
+        else if (p == "maintenance") { if (installedVersion == "") installedVersion = BuildInfo.Version; PageMaintenance(); }
+        else if (p == "uninstall") { if (installedVersion == "") installedVersion = BuildInfo.Version; PageUninstall(); }
+        else if (p == "progress") { PageProgress("install"); logText.AppendLine("Installing Repodeck " + BuildInfo.Version + " in " + installDir); log.Text = logText.ToString(); progressText.Text = "Copying files…"; }
+        else if (p == "finish") PageFinish("install", null, false);
+        else if (p == "error") { logText.AppendLine("FAILED: example"); PageFinish("install", "Access to the folder was denied.", false); }
+        else PageWelcome();
+        Refresh();
+        using (var bmp = new Bitmap(Width, Height)) { DrawToBitmap(bmp, new Rectangle(0, 0, Width, Height)); bmp.Save(Snapshot, System.Drawing.Imaging.ImageFormat.Png); }
+        Close();
     }
 
     // ------------------------------------------------------------------ run
+    void Log(string line)
+    {
+        if (InvokeRequired) { BeginInvoke(new Action<string>(Log), line); return; }
+        logText.AppendLine(line);
+        if (log != null && !log.IsDisposed) log.AppendText(line + Environment.NewLine);
+        try { Directory.CreateDirectory(dataDir); File.AppendAllText(Path.Combine(dataDir, "install.log"), DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  " + line + Environment.NewLine); } catch { }
+    }
+
+    /// What is happening now, and how far along (percent; below zero = unknown).
+    void Step(string text, int percent)
+    {
+        if (InvokeRequired) { BeginInvoke(new Action<string, int>(Step), text, percent); return; }
+        if (progressText != null && !progressText.IsDisposed && text != null) progressText.Text = text;
+        if (progress == null || progress.IsDisposed) return;
+        if (percent < 0) { if (progress.Style != ProgressBarStyle.Marquee) progress.Style = ProgressBarStyle.Marquee; }
+        else { if (progress.Style != ProgressBarStyle.Continuous) progress.Style = ProgressBarStyle.Continuous; progress.Value = Math.Max(0, Math.Min(100, percent)); }
+    }
+
+    string ElevatedArgs(string action)
+    {
+        var a = new StringBuilder();
+        a.Append("/run ").Append(action).Append(" /allusers /datadir \"").Append(dataDir.TrimEnd('\\')).Append("\" /dir \"").Append(installDir.TrimEnd('\\')).Append("\"");
+        if (wantDesktop) a.Append(" /desktop");
+        if (!wantTools) a.Append(" /notools");
+        if (wipeData) a.Append(" /wipedata");
+        if (Portable) a.Append(" /portable");
+        return a.ToString();
+    }
+
     void Run(string action)
     {
         if (busy) return;
+        // For everyone = Program Files and the machine's registry: Windows asks for administrator rights once,
+        // and the work continues in that elevated copy of Setup.
+        if (machine && !IsElevated() && !Portable)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(Application.ExecutablePath, ElevatedArgs(action) + (silent ? " /quiet" : "")) { UseShellExecute = true, Verb = "runas" };
+                using (var p = Process.Start(psi))
+                {
+                    if (silent) { p.WaitForExit(); ExitCode = p.ExitCode; }
+                }
+                Close();
+            }
+            catch (Win32Exception)
+            {
+                if (silent) { ExitCode = 5; Close(); return; }
+                MessageBox.Show(this, "Administrator permission was not given, so nothing was changed.\n\nTo install without it, choose \"Just me\".", AppName + " Setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            return;
+        }
         busy = true;
-        hint.Visible = false; log.Visible = true;
-        progress.Visible = true;
-        foreach (var b in new[] { btnPrimary, btnRepair, btnUninstall, btnClose }) b.Enabled = false;
-        if (confirmBtn != null) confirmBtn.Enabled = false;
-        bool wantTools = chkTools.Checked, wantDesktop = chkDesktop.Checked, wantLaunch = chkLaunch.Checked && !silent, wipeData = chkData.Checked;
+        if (action != "uninstall" && installedVersion == null) installedVersion = "";
+        PageProgress(action);
+        bool tools = wantTools, desktop = wantDesktop, wipe = wipeData;
         var worker = new Thread(delegate()
         {
             string error = null;
             bool toolsMissing = false;
             try
             {
-                if (action == "uninstall") Uninstall(wipeData);
-                else toolsMissing = !Install(wantTools, wantDesktop, action == "repair");
+                if (action == "uninstall") Uninstall(wipe);
+                else toolsMissing = !Install(tools, desktop, action == "repair");
             }
+            catch (UnauthorizedAccessException e) { error = "Windows did not allow writing to " + installDir + ". " + e.Message; Log("FAILED: " + e); }
             catch (Exception e) { error = e.Message; Log("FAILED: " + e); }
-            BeginInvoke(new Action(delegate { Finished(action, error, toolsMissing, wantLaunch); }));
+            BeginInvoke(new Action(delegate { Finished(action, error, toolsMissing); }));
         });
         worker.IsBackground = true;
         worker.SetApartmentState(ApartmentState.STA);
         worker.Start();
     }
 
-    void Finished(string action, string error, bool toolsMissing, bool launch)
+    void Finished(string action, string error, bool toolsMissing)
     {
         busy = false;
-        progress.Visible = false;
-        foreach (var b in new[] { btnPrimary, btnRepair, btnUninstall, btnClose }) b.Enabled = true;
         ExitCode = error != null ? 1 : 0;
         if (silent) { Close(); return; }
-        btnClose.Text = "Close";
-        chkData.Visible = false;
-        if (error != null)
-        {
-            status.Text = "Something went wrong: " + error + "\nDetails are below and in " + Path.Combine(dataDir, "install.log");
-            LayoutButtons(btnClose);
-            return;
-        }
-        if (action == "uninstall")
-        {
-            status.Text = "Repodeck was removed.\nGit, GitHub CLI and Node.js are still installed.";
-            chkTools.Visible = chkDesktop.Visible = chkLaunch.Visible = false;
-            LayoutButtons(btnClose);
-            return;
-        }
-        uninstallMode = false;
-        RefreshState();
-        // Make the result unmistakable, and never start the app unless the user asks.
-        title.Text = toolsMissing ? "Installed, with warnings" : (action == "repair" ? "Repair complete" : "Installation complete");
-        subtitle.Text = toolsMissing ? "Some required tools are still missing" : "Repodeck " + BuildInfo.Version + " is ready to use";
-        status.Font = new Font("Segoe UI Semibold", 10f);
-        status.ForeColor = toolsMissing ? Color.FromArgb(154, 97, 0) : Color.FromArgb(31, 122, 67);
-        status.Text = toolsMissing ? "Repodeck is installed, but it cannot run until the tools marked below are installed.\nInstall them, then run Setup again and choose Repair." : "✔  Repodeck is installed. You will find it in the Start menu.\nNothing was opened: use the button below when you want to start it.";
-        chkTools.Visible = chkDesktop.Visible = false;
-        if (openBtn == null) { openBtn = MakeButton("Open Repodeck", 0, true); openBtn.Size = new Size(140, 32); openBtn.Click += delegate { StartApp(); Close(); }; }
-        if (toolsMissing) LayoutButtons(btnClose); else LayoutButtons(openBtn, btnClose);
+        Step(null, 100);
+        PageFinish(action, error, toolsMissing);
     }
 
     void StartApp()
     {
-        try { Process.Start(new ProcessStartInfo(Path.Combine(installDir, "Repodeck.exe")) { WorkingDirectory = installDir, UseShellExecute = false }); } catch (Exception e) { Log("Could not start Repodeck: " + e.Message); }
+        string exe = Path.Combine(installDir, "Repodeck.exe");
+        try
+        {
+            // Setup may be running as administrator; the app must not. Explorer starts it as the signed-in user.
+            if (IsElevated()) Process.Start(new ProcessStartInfo("explorer.exe", "\"" + exe + "\"") { UseShellExecute = false });
+            else Process.Start(new ProcessStartInfo(exe) { WorkingDirectory = installDir, UseShellExecute = false });
+        }
+        catch (Exception e) { Log("Could not start Repodeck: " + e.Message); }
     }
 
     // ------------------------------------------------------------------ install / repair
     /// <returns>true when every required tool is present afterwards</returns>
     bool Install(bool installTools, bool desktop, bool repair)
     {
-        Log((repair ? "Repairing" : "Installing") + " Repodeck " + BuildInfo.Version + " in " + installDir);
+        Log((repair ? "Repairing" : "Installing") + " Repodeck " + BuildInfo.Version + " in " + installDir + " (" + ScopeText() + ")");
+        Step("Closing Repodeck if it is running…", -1);
         StopRunningApp();
         RemoveLegacy();
+        if (machine) RemovePerUserCopy();
 
         bool allOk = true;
         foreach (var t in tools)
         {
             if (t.Ok) continue;
             if (!installTools) { Log(t.Name + " is missing and was not installed (option unchecked)."); allOk = false; continue; }
+            Step("Installing " + t.Name + "…", -1);
             if (!InstallTool(t)) allOk = false;
         }
 
+        Step("Copying files…", 0);
         Log("Copying files...");
         Directory.CreateDirectory(installDir);
         foreach (var d in new[] { "server", "ui", "installer" }) DeleteDir(Path.Combine(installDir, d)); // "installer" = leftovers of the old script installer
@@ -302,8 +666,10 @@ class SetupForm : Form
             if (s == null) throw new Exception("This Setup file is incomplete (no payload). Download it again.");
             using (var zip = new ZipArchive(s, ZipArchiveMode.Read))
             {
+                int n = 0, total = Math.Max(1, zip.Entries.Count);
                 foreach (var entry in zip.Entries)
                 {
+                    if (++n % 8 == 0) Step(null, n * 90 / total);
                     string rel = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
                     string dest = Path.GetFullPath(Path.Combine(installDir, rel));
                     if (!dest.StartsWith(Path.GetFullPath(installDir) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue; // never write outside the install folder
@@ -319,12 +685,13 @@ class SetupForm : Form
 
         string exe = Path.Combine(installDir, "Repodeck.exe");
         if (Portable) { Log("Portable install: no shortcuts and no Apps entry. Start it with " + exe); return allOk; }
+        Step("Creating shortcuts…", 94);
         Log("Creating shortcuts...");
-        CreateShortcut(Path.Combine(StartMenuDir(), "Repodeck.lnk"), exe);
-        string desk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Repodeck.lnk");
-        if (desktop) CreateShortcut(desk, exe);
+        CreateShortcut(Path.Combine(StartMenuDir(machine), "Repodeck.lnk"), exe);
+        if (desktop) CreateShortcut(Path.Combine(DesktopDir(machine), "Repodeck.lnk"), exe);
 
-        using (var k = Registry.CurrentUser.CreateSubKey(RegKey))
+        using (var hive = Hive(machine))
+        using (var k = hive.CreateSubKey(RegKey))
         {
             k.SetValue("DisplayName", AppName);
             k.SetValue("DisplayVersion", BuildInfo.Version);
@@ -335,15 +702,18 @@ class SetupForm : Form
             k.SetValue("ModifyPath", "\"" + setupCopy + "\"");
             k.SetValue("QuietUninstallString", "\"" + setupCopy + "\" /uninstall /quiet");
             k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
+            k.SetValue("InstallScope", machine ? "machine" : "user");
             k.SetValue("EstimatedSize", (int)(DirSize(installDir) / 1024), RegistryValueKind.DWord);
         }
         // Notifications appear under the app's own name and icon instead of "Windows PowerShell".
         try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { } // name used by earlier builds
-        using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\" + AppId))
+        using (var hive = Hive(machine))
+        using (var k = hive.CreateSubKey(@"Software\Classes\AppUserModelId\" + AppId))
         {
             k.SetValue("DisplayName", AppName);
             k.SetValue("IconUri", Path.Combine(installDir, "ui", "icon-256.png"));
         }
+        Step("Done", 100);
         Log(allOk ? "Done." : "Done, but some required tools are missing. Repodeck will tell you which when it starts.");
         return allOk;
     }
@@ -371,15 +741,26 @@ class SetupForm : Form
     void Uninstall(bool wipeData)
     {
         Log("Removing Repodeck from " + installDir);
+        Step("Closing Repodeck if it is running…", -1);
         StopRunningApp();
-        foreach (var lnk in Portable ? new string[0] : new[] { Path.Combine(StartMenuDir(), "Repodeck.lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Repodeck.lnk") })
+        Step("Removing files…", -1);
+        foreach (var lnk in Portable ? new string[0] : new[] { Path.Combine(StartMenuDir(machine), "Repodeck.lnk"), Path.Combine(DesktopDir(machine), "Repodeck.lnk") })
         {
             try { if (File.Exists(lnk)) { File.Delete(lnk); Log("Removed " + lnk); } } catch (Exception e) { Log("Could not remove " + lnk + ": " + e.Message); }
         }
-        if (!Portable) { try { Registry.CurrentUser.DeleteSubKeyTree(RegKey, false); } catch { } try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\" + AppId, false); } catch { } try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { } }
+        if (!Portable)
+        {
+            using (var hive = Hive(machine))
+            {
+                try { hive.DeleteSubKeyTree(RegKey, false); } catch { }
+                try { hive.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\" + AppId, false); } catch { }
+            }
+            try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { }
+        }
         if (wipeData) { DeleteDir(dataDir); }
         // Remove everything we can now; this running Setup.exe (if it lives in the folder) is removed right after exit.
-        if (Directory.Exists(installDir))
+        if (Directory.Exists(installDir) && !IsInstalled()) Log("No Repodeck files found in " + installDir + "; the folder was left as it is.");
+        else if (Directory.Exists(installDir))
         {
             string self = Path.GetFullPath(Application.ExecutablePath);
             foreach (var f in Directory.GetFiles(installDir, "*", SearchOption.AllDirectories))
@@ -408,11 +789,16 @@ class SetupForm : Form
     }
 
     // ------------------------------------------------------------------ helpers
-    string ExistingInstallDir()
+    static RegistryKey Hive(bool forEveryone)
+    {
+        return forEveryone ? RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64) : RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, RegistryView.Default);
+    }
+    static string ExistingInstallDir(bool forEveryone)
     {
         try
         {
-            using (var k = Registry.CurrentUser.OpenSubKey(RegKey))
+            using (var hive = Hive(forEveryone))
+            using (var k = hive.OpenSubKey(RegKey))
             {
                 if (k != null) { var v = k.GetValue("InstallLocation") as string; if (!string.IsNullOrEmpty(v) && Directory.Exists(v)) return v; }
             }
@@ -432,7 +818,29 @@ class SetupForm : Form
         catch { }
         return "";
     }
-    static string StartMenuDir() { return Environment.GetFolderPath(Environment.SpecialFolder.Programs); }
+    static string StartMenuDir(bool forEveryone) { return Environment.GetFolderPath(forEveryone ? Environment.SpecialFolder.CommonPrograms : Environment.SpecialFolder.Programs); }
+    static string DesktopDir(bool forEveryone) { return Environment.GetFolderPath(forEveryone ? Environment.SpecialFolder.CommonDesktopDirectory : Environment.SpecialFolder.DesktopDirectory); }
+
+    /// Installing for everyone replaces a copy that was installed for this user only, so there are never two.
+    void RemovePerUserCopy()
+    {
+        try
+        {
+            string dir = ExistingInstallDir(false);
+            foreach (var lnk in new[] { Path.Combine(StartMenuDir(false), "Repodeck.lnk"), Path.Combine(DesktopDir(false), "Repodeck.lnk") })
+            {
+                try { if (File.Exists(lnk)) File.Delete(lnk); } catch { }
+            }
+            try { Registry.CurrentUser.DeleteSubKeyTree(RegKey, false); } catch { }
+            try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\" + AppId, false); } catch { }
+            if (dir != null && File.Exists(Path.Combine(dir, "server", "main.js")) && !string.Equals(Path.GetFullPath(dir), Path.GetFullPath(installDir), StringComparison.OrdinalIgnoreCase))
+            {
+                DeleteDir(dir);
+                Log("Removed the copy that was installed for one user from " + dir);
+            }
+        }
+        catch (Exception e) { Log("Could not remove the per-user copy: " + e.Message); }
+    }
 
     static string LegacyName { get { return "git" + "-helper"; } }
     static string LegacyDataDir() { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), LegacyName); }
@@ -494,7 +902,7 @@ class SetupForm : Form
             using (var k = Registry.CurrentUser.OpenSubKey(key)) { if (k != null) dir = k.GetValue("InstallLocation") as string; }
             if (dir == null) dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", LegacyName);
             bool had = Directory.Exists(dir);
-            foreach (var lnk in new[] { Path.Combine(StartMenuDir(), LegacyName + ".lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), LegacyName + ".lnk") })
+            foreach (var lnk in new[] { Path.Combine(StartMenuDir(false), LegacyName + ".lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), LegacyName + ".lnk") })
             {
                 try { if (File.Exists(lnk)) File.Delete(lnk); } catch { }
             }
@@ -657,12 +1065,19 @@ static class SetupProgram
             string a = args[i];
             string x = a.TrimStart('/', '-').ToLowerInvariant();
             if (x == "dir" && i + 1 < args.Length) { SetupForm.DirOverride = Path.GetFullPath(args[++i]); continue; }
+            if (x == "datadir" && i + 1 < args.Length) { SetupForm.DataDirOverride = Path.GetFullPath(args[++i]); continue; }
             if (x == "snapshot" && i + 1 < args.Length) { SetupForm.Snapshot = args[++i]; continue; }
+            if (x == "page" && i + 1 < args.Length) { SetupForm.SnapshotPage = args[++i].ToLowerInvariant(); continue; }
+            if (x == "run" && i + 1 < args.Length) { string r = args[++i].ToLowerInvariant(); if (r == "install" || r == "repair" || r == "uninstall") SetupForm.AutoRun = r; continue; }
             if (x == "portable") SetupForm.Portable = true;
+            if (x == "allusers") SetupForm.AllUsersArg = true;
+            if (x == "desktop") SetupForm.DesktopArg = true;
+            if (x == "notools") SetupForm.NoToolsArg = true;
+            if (x == "wipedata") SetupForm.WipeArg = true;
             if (x == "uninstall" || x == "install" || x == "repair") action = x;
             if (x == "quiet" || x == "silent") quiet = true;
         }
-        if (quiet && action == "") action = "install";
+        if (quiet && action == "") action = SetupForm.AutoRun ?? "install";
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         var form = new SetupForm(action, quiet);
