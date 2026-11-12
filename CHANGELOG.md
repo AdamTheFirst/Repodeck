@@ -9,6 +9,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Accounts are separate workspaces with their own folders; one window per account, several accounts side by side
 - Setup wizard in four steps; nothing is selected or saved until you confirm
 - Sidebar section for repositories on GitHub that are not cloned yet
+- Hide repositories you do not work on: they move to a Hidden section in the sidebar and stay out of the counts, the Overview and Fetch all
 - GitHub page with clone status; Overview with one-click push, pull and review
 - Settings reorganised: Accounts & folders in one place, SSH connections (create, test, remove, copy keys), Git configuration, and Guides
 - Its own window instead of a Microsoft Edge app window: own taskbar name and icon, title bar in the app colour, remembered size and position

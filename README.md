@@ -9,7 +9,7 @@ It runs locally: a tiny Node.js server on `127.0.0.1` drives the `git` and `gh` 
 **Repositories**
 - Scans the folders you choose, including repositories nested inside other repositories (for example a platform repository with independent service repositories inside it).
 - Highlights repositories with uncommitted changes, unpushed or unpulled commits, a merge or rebase in progress, or a locked index. Also shows branch, how far a branch is behind the default branch, your open pull requests and the latest default-branch workflow result.
-- Filter, favourites, "needs attention" view, quick open (Ctrl+P), clone, create, and open in Explorer, terminal, editor or GitHub.
+- Filter, favourites, hidden repositories, "needs attention" view, quick open (Ctrl+P), clone, create, and open in Explorer, terminal, editor or GitHub.
 
 **Source control**
 - Staged, changed, untracked and conflicted files, as a list or a tree. Unified or side-by-side diffs with changed words highlighted. Images are shown before and after.

@@ -31,6 +31,7 @@ const DEFAULTS = {
   terminalArgs: ['-d', '{path}'],
   theme: 'system',             // system | light | dark
   favourites: [],
+  hidden: [],                 // repository paths moved to the sidebar's Hidden section
   bulkConcurrency: 6,
   defaultPrFilter: 'all',
   firstRunDone: false,
@@ -118,6 +119,7 @@ const VALID = {
   editorArgs: (v) => Array.isArray(v),
   terminalArgs: (v) => Array.isArray(v),
   favourites: (v) => Array.isArray(v),
+  hidden: (v) => Array.isArray(v) && v.every((s) => typeof s === 'string'),
   currentAccount: (v) => typeof v === 'string' && /^[A-Za-z0-9-]*$/.test(v),
   accountSsh: (v) => v && typeof v === 'object' && Object.values(v).every((x) => x && ['https', 'ssh'].includes(x.protocol) && (!x.host || /^[A-Za-z0-9._-]+$/.test(x.host))),
   savedFilters: (v) => v && typeof v === 'object',

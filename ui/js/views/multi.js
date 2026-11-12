@@ -3,7 +3,7 @@ import { h, mount, icon, btn, act, modal, form, confirmDanger, banner, ago, plur
 import { rpc } from '../api.js';
 import { store, subscribe } from '../store.js';
 import { navigate } from '../router.js';
-import { needsAttention } from '../sidebar.js';
+import { needsAttention, shownRepos } from '../sidebar.js';
 
 const SUBS = [['overview', 'Overview'], ['bulk', 'Bulk operations'], ['cleanup', 'Branch cleanup'], ['search', 'Search commits']];
 
@@ -49,7 +49,8 @@ export async function runBulk(op, ids, args = {}, label) {
 // ---------- overview ----------
 function overview(page) {
   function draw() {
-    const rows = store.repos.filter((r) => r.summary).map((r) => ({ r, s: r.summary }));
+    const shown = shownRepos(); // hidden repositories stay out of the overview
+    const rows = shown.filter((r) => r.summary).map((r) => ({ r, s: r.summary }));
     const go = (x, tab = 'changes') => navigate(`#/repo/${x.r.id}/${tab}`);
     const run = (method, x, ok) => act(() => rpc(method, { id: x.r.id }), { ok: `${ok} ${x.r.label}` });
     const dirty = rows.filter((x) => x.s.dirty);
@@ -71,8 +72,8 @@ function overview(page) {
     const shared = (() => { const m = new Map(); for (const x of off) m.set(x.s.branch, (m.get(x.s.branch) || 0) + 1); return [...m].filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1])[0]; })();
 
     mount(page,
-      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'), h('div', { class: 'muted' }, `${plural(store.repos.length, 'repository')} · ${rows.length - clean.length} need something · ${clean.length} clean`)),
-        h('span', { class: 'spacer' }), btn('Fetch all', () => runBulk('fetch', store.repos.map((r) => r.id), {}, 'Fetch'), { iconName: 'fetch' })),
+      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'), h('div', { class: 'muted' }, `${plural(shown.length, 'repository')} · ${rows.length - clean.length} need something · ${clean.length} clean${store.repos.length > shown.length ? ` · ${store.repos.length - shown.length} hidden` : ''}`)),
+        h('span', { class: 'spacer' }), btn('Fetch all', () => runBulk('fetch', shown.map((r) => r.id), {}, 'Fetch'), { iconName: 'fetch' })),
       h('div', { class: 'tiles' }, [
         [dirty.length, 'uncommitted', 'var(--warn)'], [unpushed.length, 'unpushed', 'var(--info)'], [behind.length, 'behind upstream', 'var(--warn)'],
         [off.length, 'off default branch', 'var(--text)'], [stashes.length, 'with stashes', 'var(--text)'], [clean.length, 'clean', 'var(--ok)'],

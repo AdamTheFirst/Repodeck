@@ -13,6 +13,7 @@ let savedEl;
 let inputEl;
 let attentionOnly = prefs.get('dirtyOnly', false);
 let collapsed = new Set(prefs.get('collapsed', ['remote']));
+let hiddenOpen = prefs.get('hiddenOpen', false);
 let remote = null;        // repositories on GitHub (all), or null while unknown
 let remoteFor = null;     // account the list belongs to
 let remoteError = null;
@@ -63,6 +64,11 @@ export function needsAttention(r) {
   return s.dirty > 0 || s.ahead > 0 || s.unpushed > 0 || (s.inProgress && s.inProgress.length) || s.locked || s.behind > 0;
 }
 
+// Hidden repositories stay on disk and keep working; they only move out of the way, into their own section.
+const hiddenPaths = () => new Set((store.config && store.config.hidden) || []);
+const isHidden = (r, set = hiddenPaths()) => set.has(r.path);
+export const shownRepos = () => { const set = hiddenPaths(); return set.size ? store.repos.filter((r) => !set.has(r.path)) : store.repos; };
+
 function matches(r) {
   if (filter) {
     const f = filter.toLowerCase();
@@ -78,9 +84,10 @@ function myPrCount(r) {
 }
 
 function renderSeg() {
-  const need = store.repos.filter(needsAttention).length;
+  const shown = shownRepos();
+  const need = shown.filter(needsAttention).length;
   mount(segEl,
-    h('button', { class: attentionOnly ? '' : 'active', onclick: () => setAttention(false) }, `All ${store.repos.length}`),
+    h('button', { class: attentionOnly ? '' : 'active', onclick: () => setAttention(false) }, `All ${shown.length}`),
     h('button', { class: attentionOnly ? 'active' : '', title: 'Changes, unpushed or unpulled commits, or an operation in progress', onclick: () => setAttention(true) }, `Needs attention ${need}`));
 }
 function setAttention(v) { attentionOnly = v; prefs.set('dirtyOnly', v); renderTree(); }
@@ -123,13 +130,14 @@ function renderTree() {
   renderSaved();
   const scroll = treeEl.scrollTop;
   const roots = new Map();
-  for (const r of store.repos) {
+  const shown = shownRepos();
+  for (const r of shown) {
     if (!roots.has(r.root)) roots.set(r.root, { name: r.rootName, repos: [] });
     roots.get(r.root).repos.push(r);
   }
   const out = [];
   const favs = store.config ? store.config.favourites || [] : [];
-  const favRepos = store.repos.filter((r) => favs.includes(r.path) && matches(r));
+  const favRepos = shown.filter((r) => favs.includes(r.path) && matches(r));
   if (favRepos.length) {
     out.push(groupHead('fav', 'Favourites', favRepos.length, favRepos.filter(needsAttention).length));
     if (!collapsed.has('fav')) for (const r of sortList(favRepos)) out.push(repoRow(r, 0, false));
@@ -156,9 +164,24 @@ function renderTree() {
       h('div', { class: 'col', style: { alignItems: 'center' } }, h('a', { onclick: () => navigate('#/settings/setup') }, 'Choose folders'),
         h('a', { onclick: () => navigate('#/github') }, 'Clone from GitHub'))));
   }
+  out.push(...hiddenSection());
   out.push(...remoteSection());
   mount(treeEl, out);
   treeEl.scrollTop = scroll;
+}
+
+function hiddenSection() {
+  const set = hiddenPaths();
+  const all = store.repos.filter((r) => set.has(r.path));
+  if (!all.length) return [];
+  const list = all.filter(matches);
+  if (!list.length && (filter || attentionOnly)) return [];
+  const open = hiddenOpen || !!filter;
+  const out = [h('div', { class: 'side-sep' })];
+  out.push(h('div', { class: 'ws-head', title: 'Repositories you have hidden. Right-click one to show it again.', onclick: () => { hiddenOpen = !hiddenOpen; prefs.set('hiddenOpen', hiddenOpen); renderTree(); } },
+    icon(open ? 'chevronDown' : 'chevronRight', 'sm'), h('span', { class: 'grow ellipsis' }, 'Hidden'), h('span', { class: 'faint' }, all.length)));
+  if (open) for (const r of sortList(list)) out.push(repoRow(r, 0, false, true));
+  return out;
 }
 
 function remoteSection() {
@@ -216,7 +239,7 @@ function toggle(key) {
   renderTree();
 }
 
-function repoRow(r, depth, hasKids) {
+function repoRow(r, depth, hasKids, dim) {
   const s = r.summary || {};
   const attention = needsAttention(r);
   const b = boardFor(r);
@@ -236,7 +259,7 @@ function repoRow(r, depth, hasKids) {
   const ci = bs === 'failure' ? 'bad' : bs === 'running' ? 'run' : bs === 'success' ? 'ok' : '';
   const offDefault = s.branch && s.defaultBranch && s.branch !== s.defaultBranch;
   return h('div', {
-    class: `repo-row ${store.selected === r.id ? 'selected' : ''} ${attention ? 'dirty' : ''}`,
+    class: `repo-row ${store.selected === r.id ? 'selected' : ''} ${attention ? 'dirty' : ''} ${dim ? 'is-hidden' : ''}`,
     style: { paddingLeft: `${8 + depth * 16}px` }, role: 'treeitem', 'aria-selected': store.selected === r.id ? 'true' : 'false',
     title: `${r.path}${b && !b.error && bs ? `\n${b.branch}: ${bs}` : ''}${s.error ? `\n${s.error}` : ''}`,
     onclick: () => navigate(`#/repo/${r.id}/${store.tab || 'changes'}`),
@@ -245,7 +268,7 @@ function repoRow(r, depth, hasKids) {
   hasKids ? h('span', { class: 'twisty', onclick: (e) => { e.stopPropagation(); toggle(r.id); } }, icon(collapsed.has(r.id) ? 'chevronRight' : 'chevronDown', 'sm'))
     : h('span', { class: `dot ${ci}`, title: bs ? `Latest run on ${b.branch}: ${bs}` : 'No workflow status' }),
   favs.includes(r.path) ? h('span', { class: 'star' }, '★') : null,
-  h('span', { class: 'repo-name' }, r.name),
+  h('span', { class: 'repo-name' }, dim ? r.label : r.name),
   h('span', { class: `branch ${offDefault ? 'off-default' : ''}`, title: s.detached ? 'Detached HEAD' : s.branch }, s.detached ? `@${(s.oid || '').slice(0, 7)}` : s.branch || ''),
   h('span', { class: 'meta' }, meta));
 }
@@ -253,6 +276,7 @@ function repoRow(r, depth, hasKids) {
 export function repoMenu(r) {
   const favs = store.config.favourites || [];
   const isFav = favs.includes(r.path);
+  const hidden = isHidden(r);
   return [
     { label: 'Open in Explorer', icon: 'folder', action: () => act(() => rpc('open.explorer', { id: r.id })) },
     { label: 'Open terminal here', icon: 'terminal', action: () => act(() => rpc('open.terminal', { id: r.id })) },
@@ -266,6 +290,7 @@ export function repoMenu(r) {
     { label: 'Copy path', icon: 'copy', action: () => copyText(r.path) },
     { label: 'Copy remote URL', icon: 'copy', disabled: !r.slug, action: async () => { const rs = await rpc('repo.remotes', { id: r.id }); const o = rs.find((x) => x.name === (r.slug.remote || 'origin')) || rs[0]; if (o) copyText(o.url); } },
     { label: isFav ? 'Remove from favourites' : 'Add to favourites', icon: 'star', action: () => toggleFav(r) },
+    { label: hidden ? 'Show in sidebar' : 'Hide from sidebar', icon: hidden ? 'eye' : 'eyeOff', action: () => toggleHidden(r) },
   ];
 }
 
@@ -277,8 +302,18 @@ async function toggleFav(r) {
   renderTree();
 }
 
+async function toggleHidden(r) {
+  const set = hiddenPaths();
+  const hide = !set.has(r.path);
+  if (hide) set.add(r.path); else set.delete(r.path);
+  store.config = await rpc('config.update', { patch: { hidden: [...set] } });
+  emit('config');
+  renderTree();
+  if (hide) banner({ level: 'info', title: `${r.label} is hidden`, body: 'It is in the Hidden section at the bottom of the sidebar.', timeout: 6000, actions: [{ label: 'Undo', action: () => toggleHidden(r) }] });
+}
+
 async function fetchAll() {
-  const ids = store.repos.map((r) => r.id);
+  const ids = shownRepos().map((r) => r.id); // hidden repositories are left alone
   if (!ids.length) return;
   banner({ level: 'info', title: `Fetching ${ids.length} repositories…`, timeout: 2500 });
   const res = await act(() => rpc('bulk.run', { op: 'fetch', ids }));
