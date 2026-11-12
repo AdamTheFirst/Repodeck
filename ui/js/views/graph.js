@@ -241,63 +241,90 @@ export function render(view, r, sub) {
   }
 
   // ---------- details ----------
-  const diff = createDiffView({ selectable: false });
+  let fileStats = new Map(); // path -> file entry of the open commit, for the banner above each diff
+  let detailMax = prefs.get('gDetailMax', false);
+  const diff = createDiffView({
+    selectable: false, alwaysBanner: true,
+    headerFor: (f) => {
+      const s = fileStats.get(f.path);
+      return s && s.add != null ? h('span', { class: 'cd-stat' }, h('span', { class: 'add' }, `+${s.add}`), ' ', h('span', { class: 'del' }, `−${s.del}`)) : null;
+    },
+  });
+  function applyMax() { detail.classList.toggle('max', detailMax); wrap.classList.toggle('hidden', detailMax && !detail.classList.contains('hidden')); }
+  function closeDetail() { selected = null; compareWith = null; detail.classList.add('hidden'); applyMax(); renderToolbar(); renderRows(true); }
+  // Laid out like a commit page on GitHub: what the commit is across the top, then every changed file
+  // one under the other, with a list on the left to jump between them.
   async function showDetail() {
-    if (!selected) { detail.classList.add('hidden'); return; }
+    if (!selected) { detail.classList.add('hidden'); applyMax(); return; }
     detail.classList.remove('hidden');
-    const info = h('div', { class: 'info' }, h('div', { class: 'skeleton' }, 'Loading…'));
-    const filesList = h('div', { class: 'pane-scroll', style: { maxHeight: '40%', borderBottom: '1px solid var(--border)' } });
-    mount(detail, info, h('div', { class: 'files' }, filesList, diff.el));
+    applyMax();
+    const head = h('div', { class: 'cd-head' }, h('div', { class: 'skeleton' }, 'Loading…'));
+    const filesList = h('div', { class: 'cd-files' });
+    mount(detail, head, h('div', { class: 'cd-body' }, filesList, diff.el));
     diff.set({ files: [] });
+    const tools = () => [
+      btn(detailMax ? 'Show graph' : 'Expand', () => { detailMax = !detailMax; prefs.set('gDetailMax', detailMax); showDetail(); }, { cls: 'small', title: detailMax ? 'Show the commit list again' : 'Use the whole page for this commit' }),
+      iconBtn('x', 'Close', closeDetail),
+    ];
+    const totals = (files) => {
+      const add = files.reduce((n, f) => n + (f.add || 0), 0); const del = files.reduce((n, f) => n + (f.del || 0), 0);
+      return h('span', { class: 'cd-stat' }, `${files.length} file${files.length === 1 ? '' : 's'} changed `, h('span', { class: 'add' }, `+${add}`), ' ', h('span', { class: 'del' }, `−${del}`));
+    };
     const a = selected; const b = compareWith;
     try {
       if (b || a === 'WORKTREE') {
-        const from = b ? (a === 'WORKTREE' ? b : b) : meta.head;
+        const from = b || meta.head;
         const to = a === 'WORKTREE' ? null : a;
         const left = b && a !== 'WORKTREE' ? olderOf(a, b) : from;
         const right = b && a !== 'WORKTREE' ? (left === a ? b : a) : to;
         const files = await rpc('repo.compareFiles', { id: r.id, from: left, to: right || undefined });
-        mount(info, h('h3', null, a === 'WORKTREE' && !b ? 'Uncommitted changes' : 'Comparison'),
-          h('div', { class: 'kv', style: { marginTop: '8px' } }, h('div', null, 'From'), h('div', { class: 'mono' }, left === 'WORKTREE' ? 'working tree' : left.slice(0, 10)), h('div', null, 'To'), h('div', { class: 'mono' }, right ? (right === 'WORKTREE' ? 'working tree' : right.slice(0, 10)) : 'working tree')),
-          h('div', { class: 'muted', style: { marginTop: '8px' } }, `${files.length} file(s) differ`),
-          a === 'WORKTREE' ? h('div', { style: { marginTop: '8px' } }, btn('Open in Changes', () => navigate(`#/repo/${r.id}/changes`), { cls: 'small' })) : null);
-        renderFiles(filesList, files, (f) => rpc('repo.diff', { id: r.id, kind: 'range', from: left, to: right || undefined, file: f.path }));
+        if (disposed || selected !== a) return;
+        mount(head,
+          h('div', { class: 'row' }, h('h3', { class: 'grow ellipsis' }, a === 'WORKTREE' && !b ? 'Uncommitted changes' : 'Comparison'),
+            a === 'WORKTREE' ? btn('Open in Changes', () => navigate(`#/repo/${r.id}/changes`), { cls: 'small' }) : null, tools()),
+          h('div', { class: 'cd-meta' }, h('span', null, 'From ', h('span', { class: 'mono' }, left.slice(0, 10))), h('span', null, 'to ', h('span', { class: 'mono' }, right ? right.slice(0, 10) : 'working tree')), totals(files)));
+        renderFiles(filesList, files, () => rpc('repo.diff', { id: r.id, kind: 'range', from: left, to: right || undefined }));
         return;
       }
       const d = await rpc('repo.commit.detail', { id: r.id, rev: a });
       if (disposed || selected !== a) return;
-      mount(info,
-        h('div', { class: 'row' }, h('h3', { class: 'grow' }, d.message.split('\n')[0]), iconBtn('x', 'Close details', () => { selected = null; detail.classList.add('hidden'); renderRows(true); })),
-        h('div', { class: 'commit-msg muted' }, d.message.split('\n').slice(1).join('\n').trim()),
-        h('div', { class: 'kv' },
-          h('div', null, 'Commit'), h('div', { class: 'mono' }, d.hash, ' ', h('a', { onclick: () => copyText(d.hash) }, 'copy')),
-          h('div', null, 'Parents'), h('div', null, d.parents.length ? d.parents.map((p, i) => [i ? ', ' : '', h('a', { class: 'mono', onclick: () => { jumpTo(p); showDetail(); } }, p.slice(0, 8))]) : 'none (root commit)'),
-          h('div', null, 'Author'), h('div', null, `${d.author} <${d.authorEmail}>`), h('div', null, 'Date'), h('div', null, fmtDate(d.authorTime)),
-          d.committer !== d.author ? [h('div', null, 'Committer'), h('div', null, `${d.committer}, ${fmtDate(d.commitTime)}`)] : null,
-          h('div', null, 'On remote'), h('div', null, d.pushed ? 'yes' : 'no (not pushed)')),
-        h('div', { class: 'row wrap', style: { marginTop: '10px' } },
+      const body = d.message.split('\n').slice(1).join('\n').trim();
+      mount(head,
+        h('div', { class: 'row' }, h('h3', { class: 'grow ellipsis', title: d.message.split('\n')[0] }, d.message.split('\n')[0]),
           btn('Actions…', (e) => menuBelow(e.currentTarget, commitMenu({ hash: d.hash, subject: d.message.split('\n')[0], parents: d.parents })), { cls: 'small' }),
-          r.slug && r.slug.github ? btn('Open on GitHub', () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}/commit/${d.hash}` }), { cls: 'small', iconName: 'external' }) : null));
-      renderFiles(filesList, d.files, (f) => rpc('repo.diff', { id: r.id, kind: 'commit', commit: d.hash, file: f.path, orig: f.orig }));
-    } catch (e) { mount(info, h('div', { class: 'errbox' }, e.message)); }
+          r.slug && r.slug.github ? btn('Open on GitHub', () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}/commit/${d.hash}` }), { cls: 'small', iconName: 'external' }) : null,
+          tools()),
+        body ? h('div', { class: 'commit-msg muted' }, body) : null,
+        h('div', { class: 'cd-meta' },
+          h('span', { title: `${d.author} <${d.authorEmail}>${d.committer !== d.author ? `\nCommitted by ${d.committer}, ${fmtDate(d.commitTime)}` : ''}` }, h('b', null, d.author), ` committed ${ago(d.authorTime)}`),
+          h('span', { class: 'faint', title: fmtDate(d.authorTime) }, fmtDate(d.authorTime)),
+          h('span', null, h('a', { class: 'mono', title: 'Copy the full hash', onclick: () => copyText(d.hash) }, d.hash.slice(0, 10))),
+          h('span', null, d.parents.length ? [d.parents.length > 1 ? 'parents ' : 'parent ', d.parents.map((p, i) => [i ? ', ' : '', h('a', { class: 'mono', onclick: () => { jumpTo(p); showDetail(); } }, p.slice(0, 8))])] : 'root commit'),
+          d.pushed ? null : h('span', { class: 'badge info' }, 'not pushed'),
+          totals(d.files)));
+      renderFiles(filesList, d.files, () => rpc('repo.diff', { id: r.id, kind: 'commit', commit: d.hash }));
+    } catch (e) { mount(head, h('div', { class: 'row' }, h('div', { class: 'errbox grow' }, e.message), tools())); }
   }
   function olderOf(a, b) {
     const ia = commits.findIndex((c) => c.hash === a); const ib = commits.findIndex((c) => c.hash === b);
     return ia > ib ? a : b; // further down = older
   }
-  function renderFiles(el, files, getDiff) {
+  /** The list on the left jumps to a file; the diff on the right shows every file, one under the other. */
+  async function renderFiles(el, files, getAll) {
+    fileStats = new Map(files.map((f) => [f.path, f]));
     if (!files.length) { mount(el, h('div', { class: 'empty' }, 'No file changes.')); return; }
     const rows = files.map((f) => {
-      const row = h('div', { class: 'file-row', onclick: async () => {
+      const row = h('div', { class: 'file-row', title: f.orig ? `${f.orig} → ${f.path}` : f.path, onclick: () => {
         rows.forEach((x) => x.classList.remove('selected')); row.classList.add('selected');
-        try { diff.set(await getDiff(f)); } catch (e) { banner({ level: 'error', title: e.message }); }
+        const banner = [...diff.el.querySelectorAll('.file-banner')].find((x) => x.dataset.path === f.path);
+        if (banner) { const box = banner.closest('.diff'); box.scrollTop += banner.getBoundingClientRect().top - box.getBoundingClientRect().top; }
       } },
-      h('span', { class: `st st-${f.status}` }, f.status), h('span', { class: 'name', title: f.orig ? `${f.orig} → ${f.path}` : f.path }, f.orig ? `${f.orig} → ${f.path}` : f.path),
-      f.add != null ? h('span', { class: 'faint', style: { fontSize: '11px' } }, h('span', { style: { color: 'var(--ok)' } }, `+${f.add}`), ' ', h('span', { style: { color: 'var(--bad)' } }, `−${f.del}`)) : null);
+      h('span', { class: `st st-${f.status}` }, f.status), h('span', { class: 'name' }, f.path.split('/').pop(), f.path.includes('/') ? h('span', { class: 'faint' }, `  ${f.path.split('/').slice(0, -1).join('/')}`) : null),
+      f.add != null ? h('span', { class: 'cd-stat' }, h('span', { class: 'add' }, `+${f.add}`), ' ', h('span', { class: 'del' }, `−${f.del}`)) : null);
       return row;
     });
     mount(el, rows);
-    rows[0].click();
+    try { diff.set(await getAll()); } catch (e) { banner({ level: 'error', title: e.message }); }
   }
 
   // ---------- context menus ----------

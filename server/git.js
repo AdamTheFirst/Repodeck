@@ -216,7 +216,7 @@ async function fileDiff(repo, { kind, file, orig, commit, from, to, ignoreWs, co
   } else if (kind === 'commit') {
     const parents = (await qout(repo, ['rev-list', '--parents', '-n', '1', commit])).trim().split(' ').slice(1);
     const base = parents[0] || emptyTree;
-    text = await rawDiff(repo, ['diff', ...da, base, commit, '--', ...(orig ? [orig, file] : [file])]);
+    text = await rawDiff(repo, ['diff', ...da, base, commit, '--', ...(file ? (orig ? [orig, file] : [file]) : [])]); // no file = the whole commit
   } else if (kind === 'range') {
     text = await rawDiff(repo, ['diff', ...da, from, ...(to ? [to] : []), '--', ...(file ? [file] : [])]);
   } else throw new Error('Unknown diff kind');

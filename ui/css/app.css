@@ -703,3 +703,16 @@ table.grid tr:last-child td { border-bottom: 0; }
 /* a button that has something waiting, e.g. Pull when the branch is behind */
 .btn.attn { color: var(--warn); font-weight: 600; }
 .btn.attn:hover { background: var(--warn-soft); }
+
+/* commit detail in the graph: header across the top, file list left, every file's diff stacked on the right */
+.detail-pane { flex-direction: column; height: 58%; }
+.detail-pane.max { height: auto; flex: 1; min-height: 0; border-top: 0; }
+.cd-head { padding: 10px 14px 8px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; flex: none; }
+.cd-head h3 { margin: 0; font-size: 15px; }
+.cd-head .commit-msg { max-height: 84px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+.cd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.cd-meta b { color: var(--text); font-weight: 600; }
+.cd-body { flex: 1; min-height: 0; display: flex; }
+.cd-files { width: 280px; min-width: 180px; max-width: 34%; overflow: auto; border-right: 1px solid var(--border); padding: 4px 0; flex: none; }
+.cd-stat { font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cd-stat .add { color: var(--ok); } .cd-stat .del { color: var(--bad); }

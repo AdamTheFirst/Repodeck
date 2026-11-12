@@ -137,7 +137,7 @@ export function createDiffView(opts = {}) {
     if (!data.files.length) { body.append(h('div', { class: 'empty' }, opts.emptyText || 'No differences.')); renderSelBar(); return; }
     data.files.forEach((f, fi) => {
       if (data.files.length > 1 || opts.alwaysBanner) {
-        body.append(h('div', { class: 'file-banner' }, h('span', { class: 'mono grow ellipsis', title: f.path }, f.renameFrom ? `${f.renameFrom} → ${f.path}` : f.path), opts.headerFor ? opts.headerFor(f, fi) : null));
+        body.append(h('div', { class: 'file-banner', 'data-path': f.path }, h('span', { class: 'mono grow ellipsis', title: f.path }, f.renameFrom ? `${f.renameFrom} → ${f.path}` : f.path), opts.headerFor ? opts.headerFor(f, fi) : null));
       }
       if (f.binary) { body.append(h('div', { class: 'empty' }, opts.binaryNode ? opts.binaryNode(f) : 'Binary file: contents not shown.')); return; }
       if (!f.hunks.length) {
