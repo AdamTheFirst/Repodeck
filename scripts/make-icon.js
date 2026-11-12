@@ -10,7 +10,7 @@ function render(size) {
   const px = new Float32Array(W * W * 4);
   const k = W / 64; // design grid is 64x64 (same as ui/icon.svg)
   const set = (x, y, c, a = 1) => { const i = (y * W + x) * 4; px[i] = c[0]; px[i + 1] = c[1]; px[i + 2] = c[2]; px[i + 3] = a; };
-  const mint = [0x45, 0xd6, 0xb0]; const ink = [0x0d, 0x10, 0x14];
+  const mint = [0x2f, 0xc9, 0xa1];
   const card = (x0, y0, size, r, c) => {
     for (let y = Math.floor(y0 * k); y < (y0 + size) * k; y++) for (let x = Math.floor(x0 * k); x < (x0 + size) * k; x++) {
       const gx = x / k - x0; const gy = y / k - y0;
@@ -20,14 +20,20 @@ function render(size) {
   };
   const disc = (cx, cy, rad, c) => { for (let y = Math.floor((cy - rad) * k); y <= (cy + rad) * k; y++) for (let x = Math.floor((cx - rad) * k); x <= (cx + rad) * k; x++) { if (x < 0 || y < 0 || x >= W || y >= W) continue; const dx = x / k - cx; const dy = y / k - cy; if (dx * dx + dy * dy <= rad * rad) set(x, y, c, 1); } };
   const stroke = (pts, w, c) => { for (let i = 0; i < pts.length - 1; i++) { const [x0, y0] = pts[i]; const [x1, y1] = pts[i + 1]; const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 8); for (let q = 0; q <= n; q++) disc(x0 + ((x1 - x0) * q) / n, y0 + ((y1 - y0) * q) / n, w / 2, c); } };
-  // dark tile, a card outline, and two lanes that join
-  card(2, 2, 60, 15, ink);
-  card(11.9, 11.9, 40.2, 11.1, mint);
-  card(16.1, 16.1, 31.8, 6.9, ink);
-  stroke([[25.4, 23.8], [25.4, 40.2]], 3.4, mint);
-  const curve = [[38.6, 23.8]]; for (let t = 0; t <= 1.0001; t += 0.04) { const p0 = [38.6, 28.7]; const c1 = [38.6, 35.3]; const c2 = [25.4, 33.6]; const p1 = [25.4, 40.2]; const u = 1 - t; curve.push([u ** 3 * p0[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t ** 3 * p1[0], u ** 3 * p0[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t ** 3 * p1[1]]); }
-  stroke(curve, 3.4, mint);
-  disc(25.4, 23.8, 3.1, mint); disc(38.6, 23.8, 3.1, mint); disc(25.4, 40.2, 3.1, mint);
+  // a card outline with two lanes that join, on a transparent background so it sits on any taskbar
+  const clear = (x0, y0, size, r) => {
+    for (let y = Math.floor(y0 * k); y < (y0 + size) * k; y++) for (let x = Math.floor(x0 * k); x < (x0 + size) * k; x++) {
+      const gx = x / k - x0; const gy = y / k - y0;
+      const dx = Math.max(r - gx, 0, gx - (size - r)); const dy = Math.max(r - gy, 0, gy - (size - r));
+      if (dx * dx + dy * dy <= r * r) set(x, y, mint, 0);
+    }
+  };
+  card(3, 3, 58, 15, mint);
+  clear(10, 10, 44, 8.5);
+  stroke([[23.5, 21.5], [23.5, 42.5]], 5.4, mint);
+  const curve = [[40.5, 21.5]]; for (let t = 0; t <= 1.0001; t += 0.04) { const p0 = [40.5, 27.5]; const c1 = [40.5, 36]; const c2 = [23.5, 34]; const p1 = [23.5, 42.5]; const u = 1 - t; curve.push([u ** 3 * p0[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t ** 3 * p1[0], u ** 3 * p0[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t ** 3 * p1[1]]); }
+  stroke(curve, 5.4, mint);
+  disc(23.5, 21.5, 4.7, mint); disc(40.5, 21.5, 4.7, mint); disc(23.5, 42.5, 4.7, mint);
   // downsample
   const out = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
