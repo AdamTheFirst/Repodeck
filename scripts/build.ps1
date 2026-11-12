@@ -11,11 +11,11 @@
                      The release workflow signs the app first, then builds Setup around it.
                      The file must be outside dist\, which is emptied at the start.
 #>
-param([string]$SignedApp)
+param([string]$SignedApp, [string]$Out)
 $ErrorActionPreference = 'Stop'
 if ($SignedApp) { $SignedApp = (Resolve-Path $SignedApp).Path }
 $root = Split-Path -Parent $PSScriptRoot
-$dist = Join-Path $root 'dist'
+$dist = if ($Out) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out) } else { Join-Path $root 'dist' }  # -Out: build somewhere else, e.g. while dist\ is in use
 $stage = Join-Path $dist 'stage'
 $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }

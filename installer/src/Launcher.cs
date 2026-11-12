@@ -176,7 +176,11 @@ static class Brand
         return found;
     }
 
-    public static bool Apply(IntPtr hwnd, string exe)
+    public static bool Apply(IntPtr hwnd, string exe) { return Apply(hwnd, exe, true); }
+
+    /// withIcon = false leaves the taskbar picture to the window's own icon. Windows caches a picture
+    /// given by file path and keeps showing an old one after an update; the window's icon is always current.
+    public static bool Apply(IntPtr hwnd, string exe, bool withIcon)
     {
         try
         {
@@ -186,7 +190,7 @@ static class Brand
             bool ok = Set(store, 5, AppIdentity.Id)                     // System.AppUserModel.ID
                 & Set(store, 2, "\"" + exe + "\"")            // RelaunchCommand
                 & Set(store, 4, "Repodeck")                  // RelaunchDisplayNameResource
-                & Set(store, 3, exe + ",0");                 // RelaunchIconResource
+                & (withIcon ? Set(store, 3, exe + ",0") : true); // RelaunchIconResource
             store.Commit();
             Marshal.ReleaseComObject(store);
             return ok;

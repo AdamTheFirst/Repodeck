@@ -2,8 +2,13 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.0.2
 
+- The taskbar shows the current icon after an update instead of a cached old one
+- Setup: the "Install for" choice was partly covered on the options page
+- Setup: who-and-where and tools-and-shortcuts are separate pages
+- Setup: on a computer without winget, Git, GitHub CLI and Node.js are downloaded from their official sites, checked for a valid publisher signature, and installed
+- Setup: a folder that is read-only or already holds other files is refused when you pick it, with a clear message
 - Both exe files carry the product name and version (Properties, Details)
 - The release workflow can code-sign the app and Setup through SignPath once the project is accepted there
 

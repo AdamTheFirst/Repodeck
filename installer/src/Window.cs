@@ -72,7 +72,13 @@ sealed class MainWindow : Form
         boundsFile = Path.Combine(WindowHost.DataDir(), "window-" + who + ".txt");
 
         Text = "Repodeck";
-        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+        // The .ico next to the exe has every size, so the taskbar gets a sharp picture at any scaling.
+        try
+        {
+            string ico = Path.Combine(Path.GetDirectoryName(Application.ExecutablePath), "repodeck.ico");
+            Icon = File.Exists(ico) ? new Icon(ico) : Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        }
+        catch { }
         BackColor = Ink;
         MinimumSize = new Size(820, 560);
         StartPosition = FormStartPosition.Manual;
@@ -98,7 +104,7 @@ sealed class MainWindow : Form
         base.OnHandleCreated(e);
         TitleBar(true, Ink);
         // "Pin to taskbar" pins Repodeck.exe itself, not this window's command line.
-        try { Brand.Apply(Handle, Application.ExecutablePath); } catch { }
+        try { Brand.Apply(Handle, Application.ExecutablePath, false); } catch { }
     }
 
     async Task Start()

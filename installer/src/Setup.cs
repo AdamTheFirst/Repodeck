@@ -302,6 +302,7 @@ class SetupForm : Form
         }
     }
 
+    static readonly string[] InstallSteps = { "Welcome", "Location", "Tools", "Install", "Finish" };
     void Steps(int index, params string[] names) { steps = names; stepIndex = index; rail.Invalidate(); }
 
     // ------------------------------------------------------------------ page building blocks
@@ -311,7 +312,10 @@ class SetupForm : Form
     {
         var t = new Label { Text = title, Font = new Font("Segoe UI Semibold", 15f), ForeColor = Ui.Text, Location = new Point(S(32), S(30)), Size = new Size(S(456), S(34)), AutoEllipsis = true };
         content.Controls.Add(t);
-        var s = new Label { Text = sub ?? "", ForeColor = Ui.Muted, Location = new Point(S(34), S(68)), Size = new Size(S(452), S(40)) };
+        // Controls added earlier are drawn on top of later ones, so an empty subtitle must not exist at all:
+        // it would cover whatever a page puts in that space.
+        if (string.IsNullOrEmpty(sub)) return null;
+        var s = new Label { Text = sub, ForeColor = Ui.Muted, Location = new Point(S(34), S(68)), Size = new Size(S(452), S(36)) };
         content.Controls.Add(s);
         return s;
     }
@@ -361,7 +365,7 @@ class SetupForm : Form
     // ------------------------------------------------------------------ pages
     void PageWelcome()
     {
-        Clear(); Steps(0, "Welcome", "Options", "Install", "Finish");
+        Clear(); Steps(0, InstallSteps);
         Heading("Welcome to Repodeck Setup", "Version " + BuildInfo.Version);
         Para("Repodeck shows all your git repositories in one window: source control, commit graph, pull requests and GitHub Actions.", 112, 40);
         Para("Setup will:", 166, 20, null, new Font("Segoe UI Semibold", 9f));
@@ -372,26 +376,27 @@ class SetupForm : Form
         btnNext.Focus();
     }
 
+    bool customDir;
+
     void PageOptions()
     {
-        Clear(); Steps(1, "Welcome", "Options", "Install", "Finish");
-        Heading("Choose how to install", null);
-        Caption("Install for", 66);
-        var me = Card("Just me", "No administrator rights needed. Installed in your user profile.", 34, 88, 222, 74, !machine);
-        var all = Card("All users", "Needs administrator rights. Installed in Program Files.", 264, 88, 222, 74, machine);
+        Clear(); Steps(1, InstallSteps);
+        Heading("Who is it for, and where?", "Choose who can use Repodeck on this computer.");
+        var me = Card("Just me", "No administrator rights needed. Installed in your user profile.", 34, 116, 452, 58, !machine);
+        var all = Card("All users", "Needs administrator rights. Installed in Program Files.", 34, 182, 452, 58, machine);
         all.Badge = shield;
 
-        Caption("Folder", 174);
-        var folder = new TextBox { Text = installDir, ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.FromArgb(250, 251, 252), Location = new Point(S(34), S(196)), Size = new Size(S(352), S(24)) };
+        Caption("Folder", 262);
+        var folder = new TextBox { Text = installDir, ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, BackColor = Color.FromArgb(250, 251, 252), Location = new Point(S(34), S(286)), Size = new Size(S(352), S(24)) };
         content.Controls.Add(folder);
-        var change = new FlatBtn { Text = "Change…", Location = new Point(S(394), S(195)), Size = new Size(S(92), S(26)), Font = Font };
+        var change = new FlatBtn { Text = "Change…", Location = new Point(S(394), S(285)), Size = new Size(S(92), S(26)), Font = Font };
         content.Controls.Add(change);
-        bool customDir = DirOverride != null;
+        Para("Repodeck always gets its own folder named Repodeck.", 318, 20, Ui.Muted);
+        if (DirOverride != null) customDir = true;
         Action sync = delegate
         {
             if (!customDir) installDir = DefaultDir(machine);
             folder.Text = installDir;
-            Buttons("Back", "Install", "Cancel", machine && !IsElevated());
         };
         me.Picked += delegate { machine = false; sync(); };
         all.Picked += delegate { machine = true; sync(); };
@@ -403,18 +408,64 @@ class SetupForm : Form
                 string p = d.SelectedPath;
                 // Always its own folder, so that uninstalling can never remove anything else.
                 if (!string.Equals(Path.GetFileName(p.TrimEnd('\\')), "Repodeck", StringComparison.OrdinalIgnoreCase)) p = Path.Combine(p, "Repodeck");
+                string problem = FolderProblem(p);
+                if (problem != null) { MessageBox.Show(this, problem + "\n\nChoose another folder.", AppName + " Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
                 installDir = p; customDir = true; DirOverride = p; sync();
             }
         };
-
-        Caption("Required tools", 234);
-        int y = ToolRows(256);
-        bool missing = AnyToolMissing();
-        if (missing) { Check("Download and install the missing tools with winget (official source)", y + 2, wantTools, delegate(object s, EventArgs e) { wantTools = ((CheckBox)s).Checked; }); y += 26; }
-        if (!Portable) Check("Create a desktop shortcut", y + 6, wantDesktop, delegate(object s, EventArgs e) { wantDesktop = ((CheckBox)s).Checked; });
-
-        onBack = PageWelcome; onNext = delegate { Run("install"); };
+        onBack = PageWelcome; onNext = PageTools;
         sync();
+        Buttons("Back", "Next", "Cancel");
+        btnNext.Focus();
+    }
+
+    /// Why Repodeck cannot be installed in this folder, or null when it can.
+    string FolderProblem(string dir)
+    {
+        try
+        {
+            if (Directory.Exists(dir))
+            {
+                bool ours = File.Exists(Path.Combine(dir, "server", "main.js"));
+                if (!ours && Directory.GetFileSystemEntries(dir).Length > 0) return "The folder\n" + dir + "\nalready contains other files. Repodeck needs a folder of its own.";
+            }
+            if (machine && !IsElevated()) return null; // Program Files and the like: checked after the administrator prompt
+            string probeDir = dir;
+            while (!Directory.Exists(probeDir)) { string up = Path.GetDirectoryName(probeDir); if (string.IsNullOrEmpty(up)) return "The drive for\n" + dir + "\ndoes not exist."; probeDir = up; }
+            string probe = Path.Combine(probeDir, ".repodeck-write-test-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+            return null;
+        }
+        catch (Exception)
+        {
+            return "Windows does not allow writing to\n" + dir + "\nIt may be read-only, or need administrator rights.";
+        }
+    }
+
+    void PageTools()
+    {
+        Clear(); Steps(2, InstallSteps);
+        bool missing = AnyToolMissing();
+        Heading("Tools and shortcuts", missing ? "Repodeck needs the tools below. The missing ones can be installed for you." : "Repodeck needs the tools below. They are all present.");
+        Caption("Required tools", 116);
+        int y = ToolRows(140) + 8;
+        if (missing)
+        {
+            Check("Download and install the missing tools from their official sources", y, wantTools, delegate(object s, EventArgs e) { wantTools = ((CheckBox)s).Checked; });
+            y += 24;
+            Para("Without them Repodeck is installed but cannot start. You can add them later and run Setup again.", y, 34, Ui.Muted);
+            y += 44;
+        }
+        y += 10;
+        if (!Portable)
+        {
+            Caption("Shortcuts", y); y += 24;
+            Para("A Start menu entry is always added.", y, 20, Ui.Muted); y += 24;
+            Check("Also create a desktop shortcut", y, wantDesktop, delegate(object s, EventArgs e) { wantDesktop = ((CheckBox)s).Checked; });
+        }
+        onBack = PageOptions; onNext = delegate { Run("install"); };
+        Buttons("Back", "Install", "Cancel", machine && !IsElevated());
         btnNext.Focus();
     }
 
@@ -453,7 +504,7 @@ class SetupForm : Form
     void PageProgress(string action)
     {
         Clear();
-        if (action == "install") Steps(2, "Welcome", "Options", "Install", "Finish"); else Steps(1, "Choose", "Working", "Finish");
+        if (action == "install") Steps(3, InstallSteps); else Steps(1, "Choose", "Working", "Finish");
         Heading(action == "uninstall" ? "Removing Repodeck…" : (action == "repair" ? (installedVersion == BuildInfo.Version ? "Repairing Repodeck…" : "Updating Repodeck…") : "Installing Repodeck…"), "This usually takes a few seconds. Installing missing tools can take a few minutes.");
         progressText = Para("Starting…", 122, 20);
         if (progress == null) progress = new ProgressBar { Minimum = 0, Maximum = 100 };
@@ -476,7 +527,7 @@ class SetupForm : Form
     void PageFinish(string action, string error, bool toolsMissing)
     {
         Clear();
-        if (action == "install") Steps(3, "Welcome", "Options", "Install", "Finish"); else Steps(2, "Choose", "Working", "Finish");
+        if (action == "install") Steps(4, InstallSteps); else Steps(2, "Choose", "Working", "Finish");
         bool ok = error == null && !toolsMissing;
         string title = error != null ? "Something went wrong" : action == "uninstall" ? "Repodeck was removed" : toolsMissing ? "Installed, but tools are missing" : action == "repair" ? "Repodeck is up to date" : "Repodeck is installed";
         Color tone = error != null ? Ui.Bad : toolsMissing ? Ui.Warn : Ui.Good;
@@ -497,7 +548,7 @@ class SetupForm : Form
         int y = 92;
         if (error != null)
         {
-            Para(error, y, 40, Ui.Bad); y += 46;
+            Para(error, y, 56, Ui.Bad); y += 62;
             Para("Nothing else was changed. The details are below and in\n" + Path.Combine(dataDir, "install.log"), y, 36, Ui.Muted); y += 44;
             AddLog(y, 400 - y, true);
         }
@@ -531,15 +582,23 @@ class SetupForm : Form
     {
         string p = SnapshotPage ?? "";
         if (p == "options") PageOptions();
+        else if (p == "tools") PageTools();
         else if (p == "maintenance") { if (installedVersion == "") installedVersion = BuildInfo.Version; PageMaintenance(); }
         else if (p == "uninstall") { if (installedVersion == "") installedVersion = BuildInfo.Version; PageUninstall(); }
         else if (p == "progress") { PageProgress("install"); logText.AppendLine("Installing Repodeck " + BuildInfo.Version + " in " + installDir); log.Text = logText.ToString(); progressText.Text = "Copying files…"; }
         else if (p == "finish") PageFinish("install", null, false);
         else if (p == "error") { logText.AppendLine("FAILED: example"); PageFinish("install", "Access to the folder was denied.", false); }
         else PageWelcome();
-        Refresh();
-        using (var bmp = new Bitmap(Width, Height)) { DrawToBitmap(bmp, new Rectangle(0, 0, Width, Height)); bmp.Save(Snapshot, System.Drawing.Imaging.ImageFormat.Png); }
-        Close();
+        TopMost = true; Activate(); Refresh(); Application.DoEvents();
+        var t = new System.Windows.Forms.Timer { Interval = 700 };
+        t.Tick += delegate
+        {
+            t.Stop();
+            // a photograph of the real window, exactly as it appears on screen
+            using (var bmp = new Bitmap(Width, Height)) { using (var g = Graphics.FromImage(bmp)) g.CopyFromScreen(Location, Point.Empty, Size); bmp.Save(Snapshot, System.Drawing.Imaging.ImageFormat.Png); }
+            Close();
+        };
+        t.Start();
     }
 
     // ------------------------------------------------------------------ run
@@ -595,6 +654,16 @@ class SetupForm : Form
             }
             return;
         }
+        if (action == "install")
+        {
+            string problem = FolderProblem(installDir);
+            if (problem != null)
+            {
+                if (silent) { Log(problem.Replace("\n", " ")); ExitCode = 1; Close(); return; }
+                MessageBox.Show(this, problem + "\n\nGo back and choose another folder.", AppName + " Setup", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
         busy = true;
         if (action != "uninstall" && installedVersion == null) installedVersion = "";
         PageProgress(action);
@@ -608,7 +677,7 @@ class SetupForm : Form
                 if (action == "uninstall") Uninstall(wipe);
                 else toolsMissing = !Install(tools, desktop, action == "repair");
             }
-            catch (UnauthorizedAccessException e) { error = "Windows did not allow writing to " + installDir + ". " + e.Message; Log("FAILED: " + e); }
+            catch (UnauthorizedAccessException e) { error = "Windows did not allow writing to\n" + installDir + "\nThe folder may be read-only, or a file in it is in use."; Log("FAILED: " + e); }
             catch (Exception e) { error = e.Message; Log("FAILED: " + e); }
             BeginInvoke(new Action(delegate { Finished(action, error, toolsMissing); }));
         });
@@ -713,6 +782,7 @@ class SetupForm : Form
             k.SetValue("DisplayName", AppName);
             k.SetValue("IconUri", Path.Combine(installDir, "ui", "icon-256.png"));
         }
+        try { SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero); } catch { } // tell Windows its cached icons may be out of date
         Step("Done", 100);
         Log(allOk ? "Done." : "Done, but some required tools are missing. Repodeck will tell you which when it starts.");
         return allOk;
@@ -721,12 +791,7 @@ class SetupForm : Form
     bool InstallTool(Tool t)
     {
         string winget = Which("winget");
-        if (winget == null)
-        {
-            Log(t.Name + ": cannot install automatically because winget (App Installer) is not available.");
-            Log("  Install \"App Installer\" from the Microsoft Store, then run Setup again and choose Repair.");
-            return false;
-        }
+        if (winget == null) return InstallToolDirect(t); // no winget on this computer: fetch the official installer ourselves
         Log("Installing " + t.Name + " with winget (" + t.WingetId + "). This can take a few minutes...");
         string verb = t.Found == null ? "install" : "upgrade";
         int code = RunProcess(winget, verb + " --id " + t.WingetId + " --exact --source winget --accept-package-agreements --accept-source-agreements --silent --disable-interactivity", true);
@@ -735,6 +800,103 @@ class SetupForm : Form
         if (t.Ok) { Log(t.Name + " " + t.Found + " installed."); return true; }
         Log(t.Name + " could not be installed (winget exit code " + code + "). Install it yourself, then choose Repair.");
         return false;
+    }
+
+    /// Without winget: download the tool's own installer from its official site, check it, and run it.
+    bool InstallToolDirect(Tool t)
+    {
+        string dir = Path.Combine(Path.GetTempPath(), "RepodeckSetup-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            string arch = (Environment.GetEnvironmentVariable("PROCESSOR_ARCHITEW6432") ?? Environment.GetEnvironmentVariable("PROCESSOR_ARCHITECTURE") ?? "").ToUpperInvariant();
+            bool arm = arch == "ARM64";
+            string url = null, sha = null, name = null;
+            Log(t.Name + ": winget is not available, so the official installer is downloaded directly.");
+            if (t.Exe == "node")
+            {
+                const string baseUrl = "https://nodejs.org/dist/latest-v22.x/";
+                var m = Regex.Match(Fetch(baseUrl + "SHASUMS256.txt"), @"([0-9a-f]{64})\s+(node-v[\d.]+-" + (arm ? "arm64" : "x64") + @"\.msi)");
+                if (!m.Success) throw new Exception("The Node.js download list could not be read.");
+                sha = m.Groups[1].Value; name = m.Groups[2].Value; url = baseUrl + name;
+            }
+            else if (t.Exe == "gh")
+            {
+                var m = Regex.Match(Fetch("https://api.github.com/repos/cli/cli/releases/latest"), "\"browser_download_url\"\\s*:\\s*\"(https://github\\.com/cli/cli/releases/download/[^\"]+/(gh_[\\d.]+_windows_" + (arm ? "arm64" : "amd64") + "\\.msi))\"");
+                if (!m.Success) throw new Exception("The GitHub CLI download list could not be read.");
+                url = m.Groups[1].Value; name = m.Groups[2].Value;
+            }
+            else
+            {
+                var m = Regex.Match(Fetch("https://api.github.com/repos/git-for-windows/git/releases/latest"), "\"browser_download_url\"\\s*:\\s*\"(https://github\\.com/git-for-windows/git/releases/download/[^\"]+/(Git-[\\d.]+-" + (arm ? "arm64" : "64-bit") + "\\.exe))\"");
+                if (!m.Success) throw new Exception("The Git download list could not be read.");
+                url = m.Groups[1].Value; name = m.Groups[2].Value;
+            }
+            string file = Path.Combine(dir, name);
+            Log("  Downloading " + url);
+            Step("Downloading " + t.Name + "…", -1);
+            using (var wc = new WebClient()) { wc.Headers[HttpRequestHeader.UserAgent] = "RepodeckSetup"; wc.DownloadFile(url, file); }
+            if (sha != null)
+            {
+                using (var h = System.Security.Cryptography.SHA256.Create())
+                using (var fs = File.OpenRead(file))
+                {
+                    string got = BitConverter.ToString(h.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+                    if (got != sha) throw new Exception("The downloaded file does not match its published checksum.");
+                }
+            }
+            // Only run it if Windows confirms a valid publisher signature.
+            string signer = SignerOf(file);
+            if (signer == null) throw new Exception("The downloaded installer is not signed by a trusted publisher, so it was not run.");
+            Log("  Signed by: " + signer);
+            Step("Installing " + t.Name + "… Windows may ask for permission.", -1);
+            int code;
+            if (name.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)) code = RunProcess(Path.Combine(Environment.SystemDirectory, "msiexec.exe"), "/i \"" + file + "\" /passive /norestart", false);
+            else code = RunProcess(file, "/VERYSILENT /NORESTART /NOCANCEL /SP- /SUPPRESSMSGBOXES", false);
+            RefreshPath();
+            t.Found = Probe(t);
+            if (t.Ok) { Log(t.Name + " " + t.Found + " installed."); return true; }
+            Log(t.Name + " could not be installed (installer exit code " + code + "). Install it yourself, then choose Repair.");
+            return false;
+        }
+        catch (Exception e)
+        {
+            Log(t.Name + " could not be installed: " + e.Message);
+            Log("  Install it yourself, then run Setup again and choose Repair.");
+            return false;
+        }
+        finally { DeleteDir(dir); }
+    }
+
+    static string Fetch(string url)
+    {
+        using (var wc = new WebClient())
+        {
+            wc.Headers[HttpRequestHeader.UserAgent] = "RepodeckSetup";
+            wc.Encoding = Encoding.UTF8;
+            return wc.DownloadString(url);
+        }
+    }
+
+    /// The publisher of a signed file when Windows accepts its signature, else null.
+    static string SignerOf(string file)
+    {
+        try
+        {
+            string ps = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+            var psi = new ProcessStartInfo(ps, "-NoProfile -NonInteractive -Command \"$s = Get-AuthenticodeSignature -LiteralPath $env:REPODECK_CHECK_FILE; if ($s.Status -eq 'Valid') { 'OK ' + $s.SignerCertificate.Subject }\"") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+            psi.EnvironmentVariables["REPODECK_CHECK_FILE"] = file;
+            using (var p = Process.Start(psi))
+            {
+                string o = p.StandardOutput.ReadToEnd().Trim();
+                p.WaitForExit(60000);
+                if (!o.StartsWith("OK ")) return null;
+                var m = Regex.Match(o, @"CN=(""[^""]+""|[^,]+)");
+                return m.Success ? m.Groups[1].Value.Trim('"') : o.Substring(3);
+            }
+        }
+        catch { return null; }
     }
 
     // ------------------------------------------------------------------ uninstall
@@ -947,6 +1109,9 @@ class SetupForm : Form
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     static extern int SHGetPropertyStoreFromParsingName(string path, IntPtr bindCtx, int flags, ref Guid iid, out IPropertyStore store);
 
+    [DllImport("shell32.dll")]
+    static extern void SHChangeNotify(int eventId, int flags, IntPtr item1, IntPtr item2);
+
     static void TagShortcut(string lnk)
     {
         Guid iid = typeof(IPropertyStore).GUID;
@@ -988,6 +1153,7 @@ class SetupForm : Form
         string nvm = Environment.GetEnvironmentVariable("NVM_SYMLINK");
         if (!string.IsNullOrEmpty(nvm)) parts.Add(nvm);
         parts.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "WindowsApps"));
+        parts.Add(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Git", "cmd"));
         Environment.SetEnvironmentVariable("PATH", string.Join(";", parts.ToArray()));
     }
 
