@@ -198,7 +198,7 @@ export function form({ title, fields, submit = 'OK', wide = false, intro, danger
     if (f.type === 'textarea') el.style.width = '100%';
     inputs[f.name] = el;
     if (f.type === 'checkbox') return h('label', { class: 'check' }, el, f.label, f.hint ? h('span', { class: 'muted' }, ` ${f.hint}`) : null);
-    return h('label', { class: 'field' }, h('span', null, f.label), el, f.hint ? h('span', { class: 'faint' }, f.hint) : null);
+    return h('label', { class: 'field' }, h('span', null, f.label), el, f.hint ? h('span', { class: 'faint' }, f.hint) : null, f.extra ? f.extra(el) : null);
   }), errBox);
   const read = () => Object.fromEntries(fields.map((f) => [f.name, f.type === 'checkbox' ? inputs[f.name].checked : inputs[f.name].value]));
   return modal({
@@ -262,20 +262,76 @@ export function closeMenu() {
 export function menuAt(ev, items) { ev.preventDefault(); ev.stopPropagation(); menu(ev.clientX, ev.clientY, items); }
 export function menuBelow(el, items) { const r = el.getBoundingClientRect(); menu(r.left, r.bottom + 2, items); }
 
-// ---------- banners & errors ----------
-export function banner({ level = 'info', title, body, url, timeout = 6000, actions = [] }) {
+// ---------- popover (anchored panel that closes on outside click / Escape) ----------
+export function popover(anchor, content) {
+  closeMenu();
+  const el = h('div', { class: 'popover', role: 'dialog' }, content);
+  root().append(el);
+  const a = anchor.getBoundingClientRect(); // remember: the anchor may be re-rendered while open
+  const place = () => {
+    const r = el.getBoundingClientRect();
+    el.style.top = `${Math.min(a.bottom + 6, innerHeight - r.height - 8)}px`;
+    el.style.left = `${Math.max(8, Math.min(a.right - r.width, innerWidth - r.width - 8))}px`;
+  };
+  place();
+  const ro = new ResizeObserver(place);
+  ro.observe(el);
+  const close = () => { ro.disconnect(); el.remove(); document.removeEventListener('mousedown', out, true); document.removeEventListener('keydown', key, true); };
+  const out = (e) => { if (!el.contains(e.target) && !e.target.closest('.chip') && !e.target.closest('.modal-back')) close(); };
+  const key = (e) => { if (e.key === 'Escape' && !document.querySelector('.modal-back')) { e.preventDefault(); close(); } };
+  setTimeout(() => { document.addEventListener('mousedown', out, true); document.addEventListener('keydown', key, true); });
+  return close;
+}
+
+// ---------- toasts & errors ----------
+const TOAST_ICON = { success: 'check', error: 'x', warn: 'warn', info: 'bell' };
+const DEFAULT_TIMEOUT = { success: 3500, info: 5000, warn: 7000, error: 0 };
+
+/**
+ * Small toast in the bottom-right corner. Repeats of the same message are merged (×2, ×3).
+ * Auto-hides (pauses while hovered); errors stay until dismissed. Long bodies collapse behind "Details".
+ */
+export function banner({ level = 'info', title, body, url, timeout, actions = [] }) {
   const host = document.getElementById('banners');
-  const el = h('div', { class: `banner ${level}`, role: level === 'error' ? 'alert' : 'status' },
-    h('div', { class: 'grow' },
-      h('div', { class: 'bt' }, title),
-      body ? h('div', { class: 'bb' }, body) : null,
-      (url || actions.length) ? h('div', { class: 'row', style: { marginTop: '6px' } },
-        url ? h('a', { onclick: () => rpc('open.url', { url }) }, 'Open') : null,
-        actions.map((a) => h('a', { onclick: () => { a.action(); el.remove(); } }, a.label))) : null),
-    iconBtn('x', 'Dismiss', () => el.remove()));
+  const ms = timeout === undefined ? DEFAULT_TIMEOUT[level] ?? 5000 : timeout;
+  const key = `${level}|${title}|${body || ''}`;
+  const existing = [...host.children].find((c) => c.dataset.key === key);
+  if (existing) {
+    const n = (+existing.dataset.count || 1) + 1;
+    existing.dataset.count = n;
+    existing.querySelector('.t-count').textContent = `×${n}`;
+    existing.restart();
+    return existing;
+  }
+  const text = body ? String(body) : '';
+  const long = text.length > 160 || text.split('\n').length > 3;
+  const bodyEl = text ? h('div', { class: `t-body ${long ? 'clamped' : ''}` }, text) : null;
+  const links = [
+    url ? h('button', { class: 't-action', onclick: () => rpc('open.url', { url }) }, 'Open') : null,
+    ...actions.map((a) => h('button', { class: 't-action', onclick: () => { a.action(); dismiss(); } }, a.label)),
+    long ? h('button', { class: 't-action', onclick: (e) => { bodyEl.classList.toggle('clamped'); e.target.textContent = bodyEl.classList.contains('clamped') ? 'Details' : 'Less'; } }, 'Details') : null,
+  ].filter(Boolean);
+  const bar = h('div', { class: 't-progress' });
+  const el = h('div', { class: `toast ${level}`, role: level === 'error' ? 'alert' : 'status', dataset: { key, count: '1' } },
+    h('div', { class: 't-icon' }, icon(TOAST_ICON[level] || 'bell', 'sm')),
+    h('div', { class: 't-main' },
+      h('div', { class: 't-title' }, h('span', { class: 'ellipsis' }, title), h('span', { class: 't-count' })),
+      bodyEl, links.length ? h('div', { class: 't-actions' }, links) : null),
+    h('button', { class: 't-close', title: 'Dismiss', 'aria-label': 'Dismiss', onclick: () => dismiss() }, icon('x', 'sm')),
+    ms ? bar : null);
+  let timer = null;
+  let left = ms;
+  let startedAt = 0;
+  const run = () => { if (!ms) return; startedAt = Date.now(); bar.style.transition = 'none'; bar.style.transform = `scaleX(${left / ms})`; requestAnimationFrame(() => { bar.style.transition = `transform ${left}ms linear`; bar.style.transform = 'scaleX(0)'; }); timer = setTimeout(dismiss, left); };
+  const pause = () => { if (!ms || !timer) return; clearTimeout(timer); timer = null; left -= Date.now() - startedAt; bar.style.transition = 'none'; bar.style.transform = `scaleX(${Math.max(0, left / ms)})`; };
+  function dismiss() { clearTimeout(timer); el.classList.add('leaving'); setTimeout(() => el.remove(), 180); }
+  el.restart = () => { clearTimeout(timer); left = ms; run(); };
+  el.addEventListener('mouseenter', pause);
+  el.addEventListener('mouseleave', () => { if (ms && !timer) run(); });
   host.append(el);
-  if (timeout) setTimeout(() => el.remove(), timeout);
-  while (host.children.length > 5) host.firstChild.remove();
+  run();
+  // keep at most 4; drop the oldest non-error first
+  while (host.children.length > 4) (([...host.children].find((c) => !c.classList.contains('error'))) || host.firstChild).remove();
   return el;
 }
 

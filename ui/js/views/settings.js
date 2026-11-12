@@ -121,7 +121,11 @@ async function general(page) {
     const map = { ...store.config.accountForOwner };
     mount(accountsBox,
       accs.length ? h('div', null, 'Signed in: ', accs.map((a, i) => [i ? ', ' : '', h('strong', null, a.login), a.active ? ' (active)' : '', a.state !== 'success' ? h('span', { class: 'badge bad' }, a.state) : null]))
-        : h('div', { class: 'warn-box' }, 'No GitHub account is signed in to the GitHub CLI. Run "gh auth login" in a terminal, then reload.'),
+        : h('div', { class: 'warn-box' }, 'No GitHub account is signed in yet.'),
+      h('div', { class: 'row' },
+        btn(accs.length ? 'Add another account' : 'Sign in to GitHub', () => import('../account.js').then((m) => m.signIn()), { cls: accs.length ? 'small' : 'small primary', iconName: 'plus' }),
+        btn('Commit identity…', () => import('../account.js').then((m) => m.editIdentity()), { cls: 'small' }),
+        h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Switch or sign out from the account menu at the top right.')),
       owners.length ? h('table', { class: 'grid panel' }, h('tr', null, h('th', null, 'Owner'), h('th', null, 'Account')),
         owners.map((o) => h('tr', null, h('td', null, o), h('td', null,
           h('select', { onchange: (e) => { if (e.target.value) map[o] = e.target.value; else delete map[o]; save({ accountForOwner: map }, `Account for ${o} saved`); } },

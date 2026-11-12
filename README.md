@@ -54,7 +54,7 @@ Download or clone this repository, then double-click `installer\Install.cmd`.
 The installer:
 1. Checks for Git, GitHub CLI and Node.js and, after asking, installs missing ones with `winget` (package ids `Git.Git`, `GitHub.cli`, `OpenJS.NodeJS.LTS`).
 2. Copies git-helper to `%LOCALAPPDATA%\Programs\git-helper` and adds Start menu and (optionally) desktop shortcuts and an uninstall entry. No admin rights are needed for this part.
-3. Offers to sign in to GitHub (`gh auth login`) and to set your git name and email if they are not set.
+3. Nothing else: you sign in to GitHub inside the app (account button at the top right), and it can set your commit name and email too.
 
 Re-running the installer upgrades in place and keeps your settings. To remove it, use Settings → Apps → Installed apps → git-helper, or run `installer\uninstall.ps1`. Git, GitHub CLI and Node.js stay installed.
 

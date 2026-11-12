@@ -40,10 +40,13 @@ function githubPicker() {
   const el = h('div', { class: 'col' },
     h('div', { class: 'row' }, search, h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => { showArchived = e.target.checked; draw(); } }), 'Archived'), counter),
     listEl);
-  draw();
-  rpc('gh.repoListAll').then((l) => { all = l; draw(); })
-    .catch((e) => { error = /not installed/.test(e.message) ? 'GitHub CLI is not installed. Run the installer, or install it from cli.github.com.' : /auth|login|401/i.test(e.message) ? 'Not signed in to GitHub. Run "gh auth login" in a terminal, then reopen this.' : e.message.split('\n')[0]; draw(); });
-  return { el, chosen: () => [...chosen.values()], clear: () => { chosen.clear(); draw(); }, onChange: (f) => onChange.add(f) };
+  function load() {
+    all = null; error = null; draw();
+    rpc('gh.repoListAll').then((l) => { all = l; if (!l.length) error = null; draw(); })
+      .catch((e) => { error = /not installed/.test(e.message) ? 'GitHub CLI is not installed. Run the installer again to add it.' : /auth|login|401/i.test(e.message) ? 'Not signed in to GitHub yet. Use "Sign in to GitHub" above.' : e.message.split('\n')[0]; draw(); });
+  }
+  load();
+  return { el, chosen: () => [...chosen.values()], clear: () => { chosen.clear(); draw(); }, onChange: (f) => onChange.add(f), reload: load };
 }
 
 async function cloneSelected(items, parent, protocol) {
@@ -146,11 +149,15 @@ export function setup(main) {
     h('div', { class: 'row onboard-foot' }, summaryEl, h('span', { class: 'spacer' }), finishBtn));
 
   drawFound();
-  rpc('gh.accounts').then((accs) => {
-    mount(accountsEl, accs.length
-      ? h('span', null, 'Signed in to GitHub as ', accs.map((a, i) => [i ? ', ' : '', h('strong', null, a.login)]), '. Repositories of all your accounts and organisations are listed.')
-      : h('span', { class: 'warn-box', style: { display: 'block' } }, 'Not signed in to GitHub. Run "gh auth login" in a terminal to list and clone your repositories; local folders work without it.'));
-  }).catch(() => mount(accountsEl, h('span', { class: 'warn-box', style: { display: 'block' } }, 'GitHub CLI not found. Local repositories work; install the GitHub CLI for pull requests and Actions.')));
+  const drawAccounts = () => rpc('account.list').then((r) => {
+    if (!r.installed) { mount(accountsEl, h('span', { class: 'warn-box', style: { display: 'block' } }, 'GitHub CLI not found. Local repositories work; run the installer again to add it for pull requests and Actions.')); return; }
+    mount(accountsEl, r.accounts.length
+      ? h('div', { class: 'row wrap' }, h('span', null, 'Signed in as ', r.accounts.map((a, i) => [i ? ', ' : '', h('strong', null, a.login)]), '. Repositories of all your accounts and organisations are listed.'),
+        h('span', { class: 'spacer' }), btn('Add another account', () => import('./account.js').then((m) => m.signIn()).then(() => setTimeout(() => { drawAccounts(); picker.reload(); }, 500)), { cls: 'small' }))
+      : h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Sign in to see and clone your GitHub repositories. Local folders work without it.'),
+        btn('Sign in to GitHub', () => import('./account.js').then((m) => m.signIn()).then(() => setTimeout(() => { drawAccounts(); picker.reload(); }, 500)), { cls: 'small primary' })));
+  }).catch(() => {});
+  drawAccounts();
   rpc('setup.discover').then((r) => {
     found = r;
     // preselect real groups (not single repos sitting in a drive root or home)

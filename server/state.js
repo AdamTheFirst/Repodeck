@@ -303,14 +303,17 @@ function pollTrackersSoon() { clearTimeout(soon); soon = setTimeout(pollTrackers
 
 function announce(t) {
   const failed = t.runs.filter((r) => FAIL.has(r.conclusion));
-  const title = t.conclusion === 'success' ? `✔ ${t.slug.label || t.slug.repo}: checks passed`
-    : t.conclusion === 'cancelled' ? `■ ${t.slug.label || t.slug.repo}: run cancelled`
-      : `✖ ${t.slug.label || t.slug.repo}: ${failed.length} workflow(s) failed`;
-  const body = t.conclusion === 'failure' ? failed.map((r) => r.workflow).join(', ') : t.reason;
+  const name = t.slug.label || t.slug.repo;
+  const title = t.conclusion === 'success' ? `${name}: checks passed`
+    : t.conclusion === 'cancelled' ? `${name}: run cancelled`
+      : `${name}: ${failed.length} workflow(s) failed`;
+  const body = t.conclusion === 'failure' ? `${failed.map((r) => r.workflow).join(', ')}\n${t.reason}` : t.reason;
   const url = (failed[0] || t.runs[0] || {}).url;
-  bus.emit('notify', { level: t.conclusion === 'success' ? 'success' : t.conclusion === 'failure' ? 'error' : 'info', title, body, url, trackerId: t.id });
+  // In the app the toast icon shows the outcome; Windows notifications get a symbol instead.
+  bus.emit('notify', { level: t.conclusion === 'success' ? 'success' : t.conclusion === 'failure' ? 'error' : 'info', title, body, url, trackerId: t.id, repoId: t.repoId, runId: (failed[0] || {}).id });
   const cfg = config.get();
-  if (cfg.notifications) notify.toast({ title, body, url, sound: cfg.notifySound });
+  const symbol = t.conclusion === 'success' ? '✔' : t.conclusion === 'failure' ? '✖' : '■';
+  if (cfg.notifications) notify.toast({ title: `${symbol} ${title}`, body, url, sound: cfg.notifySound });
 }
 
 // ---------- PR notifications ----------

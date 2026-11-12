@@ -5,6 +5,7 @@ import { initSidebar } from './sidebar.js';
 import { onRoute, navigate, start as startRouter } from './router.js';
 import { renderRepo } from './repoview.js';
 import { openPalette } from './palette.js';
+import { accountChip, loadAccounts } from './account.js';
 
 const main = document.getElementById('main');
 let disposeView = null;
@@ -38,7 +39,8 @@ function renderTopbar() {
     h('span', { class: 'indicator', title: 'Default-branch workflow runs across all repositories. Click for the Actions board.', onclick: () => navigate('#/board') },
       counts.failure ? h('span', { class: 'row', style: { gap: '4px', color: 'var(--bad)' } }, h('span', { class: 'dot bad' }), `${counts.failure} failing`) : null,
       counts.running || activeTrackers ? h('span', { class: 'row', style: { gap: '4px', color: 'var(--run)' } }, h('span', { class: 'dot run' }), `${counts.running + activeTrackers} running`) : null,
-      !counts.failure && !counts.running && !activeTrackers ? h('span', { class: 'row', style: { gap: '4px' } }, h('span', { class: `dot ${Object.keys(store.board).length ? 'ok' : ''}` }), Object.keys(store.board).length ? 'All green' : 'Actions') : null));
+      !counts.failure && !counts.running && !activeTrackers ? h('span', { class: 'row', style: { gap: '4px' } }, h('span', { class: `dot ${Object.keys(store.board).length ? 'ok' : ''}` }), Object.keys(store.board).length ? 'All green' : 'Actions') : null),
+    accountChip());
 }
 function reviewMenu(el) {
   menuBelow(el, store.myprs.review.map((p) => ({ label: `${p.repo}#${p.number}  ${p.title}`, icon: 'pr', action: () => openPr(p) })));
@@ -148,11 +150,19 @@ async function boot() {
   on('board', ({ board, at }) => { store.board = board; store.boardAt = at; emit('board'); renderTopbar(); });
   on('trackers', (t) => { store.trackers = t; emit('trackers'); renderTopbar(); });
   on('myprs', (d) => { store.myprs = d; emit('myprs'); renderTopbar(); });
-  on('notify', (n) => banner({ level: n.level, title: n.title, body: n.body, url: n.url, timeout: n.level === 'error' ? 0 : 10000 }));
+  on('notify', (n) => banner({
+    level: n.level, title: n.title, body: n.body, timeout: n.level === 'error' ? 0 : 8000,
+    actions: [
+      n.repoId && n.runId && store.byId.has(n.repoId) ? { label: 'Show error', action: () => navigate(`#/repo/${n.repoId}/actions/run/${n.runId}`) } : null,
+      n.url ? { label: 'Open on GitHub', action: () => rpc('open.url', { url: n.url }) } : null,
+    ].filter(Boolean),
+  }));
   on('activity', (a) => { if (!a.ok) { lastErr = a; renderStatus(); } emit('activity', a); });
   onPending((n) => { pendingCount = n; renderStatus(); });
   onConnection((ok) => { store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
   subscribe('config', () => { applyTheme(); renderTopbar(); });
+  subscribe('accounts', renderTopbar);
+  loadAccounts();
   connect();
 
   // refresh on focus (cheap: one status call per repo, done server-side in parallel)

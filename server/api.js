@@ -330,6 +330,23 @@ const H = {
     await state.scan(); state.refreshAll();
     return { path: dest };
   },
+  'account.list': () => require('./accounts').list(),
+  'account.login': () => require('./accounts').startLogin(),
+  'account.loginStatus': () => require('./accounts').loginStatus(),
+  'account.loginCancel': (p) => require('./accounts').cancelLogin(p.sessionId),
+  'account.switch': async (p) => { await require('./accounts').switchTo(p.login); state.pollBoard(); return require('./accounts').list(); },
+  'account.logout': async (p) => {
+    await require('./accounts').logout(p.login);
+    // forget owner mappings that pointed at the removed account
+    const map = { ...config.get().accountForOwner };
+    for (const [o, l] of Object.entries(map)) if (l === p.login) delete map[o];
+    config.update({ accountForOwner: map });
+    state.pollBoard();
+    return require('./accounts').list();
+  },
+  'account.identity': () => require('./accounts').identity(),
+  'account.setIdentity': (p) => require('./accounts').setIdentity(p),
+  'account.noreply': (p) => require('./accounts').noreply(p.login),
   'setup.discover': () => require('./discover').discover(),
   'gh.repoListAll': () => gh.repoListAll(),
   'repo.cloneMany': async (p) => {

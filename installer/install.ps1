@@ -5,7 +5,6 @@
     1. Checks for Git, GitHub CLI and Node.js; offers to install the missing ones with winget.
     2. Copies git-helper to %LOCALAPPDATA%\Programs\git-helper (no admin rights needed).
     3. Creates Start menu and desktop shortcuts and an "Apps & features" entry for uninstalling.
-    4. Offers to sign in to GitHub with "gh auth login" and to set your git name and email if unset.
   Re-running it upgrades in place and keeps your settings. Nothing is sent anywhere by this script.
 
   Options:
@@ -14,7 +13,6 @@
     -NoShortcuts    do not create shortcuts
     -NoRegistry     do not add an uninstall entry
     -SkipTools      do not check or install Git / GitHub CLI / Node.js
-    -SkipSignIn     do not offer GitHub sign-in or git identity setup
     -NoLaunch       do not offer to start git-helper at the end
     -PlanOnly       show which tools would be installed, then stop without changing anything
     -SimulateMissing git,gh,node   treat these tools as missing (for testing the install path; combine with -PlanOnly)
@@ -27,7 +25,6 @@ param(
   [switch]$NoShortcuts,
   [switch]$NoRegistry,
   [switch]$SkipTools,
-  [switch]$SkipSignIn,
   [switch]$NoLaunch,
   [switch]$PlanOnly,
   [string[]]$SimulateMissing = @()
@@ -210,39 +207,12 @@ if (-not $NoRegistry) {
   Done 'Uninstall entry added (Settings > Apps > Installed apps)'
 }
 
-# ---------------------------------------------------------------- sign-in and identity
-if (-not $SkipSignIn) {
-  Step 'GitHub sign-in'
-  $gh = Get-Command gh -ErrorAction SilentlyContinue
-  if ($gh) {
-    & $gh.Source auth status *> $null
-    if ($LASTEXITCODE -eq 0) { Done 'GitHub CLI is signed in' }
-    elseif (Ask 'GitHub CLI is not signed in. Sign in now (opens "gh auth login")?') {
-      & $gh.Source auth login --hostname github.com --git-protocol https --web
-      & $gh.Source auth status *> $null
-      if ($LASTEXITCODE -eq 0) { Done 'Signed in to GitHub' } else { Warn 'Not signed in. Pull requests and Actions need it; run "gh auth login" later.' }
-    } else { Warn 'Skipped GitHub sign-in. Run "gh auth login" later for pull requests and Actions.' }
-  }
-  Step 'Git identity'
-  $git = Get-Command git -ErrorAction SilentlyContinue
-  if ($git) {
-    $name = (& $git.Source config --global user.name) 2>$null
-    $email = (& $git.Source config --global user.email) 2>$null
-    if ($name -and $email) { Done "Commits will be authored as $name <$email>" }
-    elseif ($Yes) { Warn 'git user.name / user.email are not set; set them before committing.' }
-    else {
-      Say '   git needs a name and email for your commits (stored in your global git config).'
-      if (-not $name) { $n = Read-Host '   Your name (leave empty to skip)'; if ($n) { & $git.Source config --global user.name "$n"; Done "user.name set to $n" } }
-      if (-not $email) { $e = Read-Host '   Your email (leave empty to skip; GitHub offers a private noreply address)'; if ($e) { & $git.Source config --global user.email "$e"; Done "user.email set to $e" } }
-    }
-  }
-}
-
 # ---------------------------------------------------------------- done
 Step 'Summary'
 foreach ($s in $summary) { Write-Host "   $s" }
 Log ($summary -join ' | ')
 Say "Installed to $InstallDir. Full log: $LogFile" 'White'
+Say 'Sign in to GitHub inside git-helper: use the button at the top right. No sign-in is needed to install.' 'White'
 if (-not $NoLaunch -and -not $Yes -and (Ask 'Start git-helper now?')) {
   Start-Process -FilePath $psExe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$launcher`"") -WindowStyle Hidden
 }
