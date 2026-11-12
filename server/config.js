@@ -5,7 +5,8 @@ const { paths, writeJsonAtomic } = require('./paths');
 const DEFAULTS = {
   version: 1,
   port: 47821,
-  roots: [],                 // [{ path, name }]
+  currentAccount: '',        // GitHub login whose workspace is shown ('' = no account)
+  accountRoots: {},          // login -> [{ path, name }]; each account has its own folders
   ignore: ['node_modules', '.venv', '.venv*', 'venv', 'dist', 'build', 'out', 'target',
     '.pnpm-store', '.next', '.nuxt', '.cache', '.tmp', 'bin', 'obj', '__pycache__', '.gradle', '.idea'],
   scanDepth: 6,
@@ -29,8 +30,6 @@ const DEFAULTS = {
   theme: 'system',             // system | light | dark
   favourites: [],
   bulkConcurrency: 6,
-  accountForOwner: {},         // owner -> gh account login (detected or set by user)
-  autoDetectAccounts: true,    // try each signed-in gh account to find one that can see an owner
   defaultPrFilter: 'all',
   firstRunDone: false,
 };
@@ -55,12 +54,45 @@ function load() {
       saved = {};
     }
   }
+  // Older settings had one shared folder list; park it until the first account is known.
+  if (Array.isArray(saved.roots)) {
+    saved.accountRoots = { ...(saved.accountRoots || {}) };
+    if (saved.roots.length && !Object.keys(saved.accountRoots).length) saved.accountRoots[UNASSIGNED] = saved.roots;
+    delete saved.roots;
+  }
+  delete saved.accountForOwner; delete saved.autoDetectAccounts;
   current = { ...DEFAULTS, ...saved };
-  return current;
+  view = null;
+  return get();
+}
+
+const UNASSIGNED = '*';
+const LOCAL = '_local';
+let view = null;
+/** Which folder list is in effect: the current account's, else unassigned folders, else the no-account list. */
+function rootsKey(cfg = current) {
+  if (cfg.currentAccount) return cfg.currentAccount;
+  return cfg.accountRoots[UNASSIGNED] ? UNASSIGNED : LOCAL;
+}
+/** Give folders from before accounts existed to the first account that is used. */
+function adoptUnassigned(login) {
+  get();
+  const ar = { ...current.accountRoots };
+  if (!login || !ar[UNASSIGNED]) return;
+  if (!ar[login] || !ar[login].length) ar[login] = ar[UNASSIGNED];
+  delete ar[UNASSIGNED];
+  current = { ...current, accountRoots: ar };
+  writeJsonAtomic(paths.config, current);
+  view = null;
 }
 function problem() { return loadProblem; }
 
-function get() { return current || load(); }
+/** Settings as the rest of the app sees them: `roots` is the current account's folder list. */
+function get() {
+  if (!current) return load();
+  if (!view) view = { ...current, roots: current.accountRoots[rootsKey()] || [] };
+  return view;
+}
 
 const VALID = {
   port: (v) => Number.isInteger(v) && v > 1024 && v < 65536,
@@ -72,13 +104,19 @@ const VALID = {
   editorArgs: (v) => Array.isArray(v),
   terminalArgs: (v) => Array.isArray(v),
   favourites: (v) => Array.isArray(v),
-  accountForOwner: (v) => v && typeof v === 'object',
+  currentAccount: (v) => typeof v === 'string' && /^[A-Za-z0-9-]*$/.test(v),
 };
 
 function update(patch) {
-  const cfg = { ...get() };
+  get();
+  const cfg = { ...current };
   for (const [k, v] of Object.entries(patch || {})) {
-    if (!(k in DEFAULTS)) continue;
+    if (k === 'roots') {
+      if (!VALID.roots(v)) throw new Error('Invalid value for setting "roots"');
+      cfg.accountRoots = { ...cfg.accountRoots, [rootsKey(cfg)]: v };
+      continue;
+    }
+    if (!(k in DEFAULTS) || k === 'accountRoots') continue;
     if (VALID[k] && !VALID[k](v)) throw new Error(`Invalid value for setting "${k}"`);
     if (typeof DEFAULTS[k] === 'number' && (typeof v !== 'number' || !Number.isFinite(v) || v < 0)) {
       throw new Error(`Setting "${k}" must be a positive number`);
@@ -88,7 +126,8 @@ function update(patch) {
   }
   writeJsonAtomic(paths.config, cfg);
   current = cfg;
-  return cfg;
+  view = null;
+  return get();
 }
 
-module.exports = { get, load, update, problem, DEFAULTS };
+module.exports = { get, load, update, problem, adoptUnassigned, DEFAULTS };

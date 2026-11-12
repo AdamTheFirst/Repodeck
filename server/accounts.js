@@ -101,14 +101,9 @@ async function setIdentity({ name, email }) {
 
 /** The private noreply address GitHub gives every account, for keeping your email out of commits. */
 async function noreply(login) {
-  const accs = await gh.accounts();
-  const a = accs.find((x) => x.login === login);
-  const r = await run('gh', ['api', 'user', '--jq', '.id'], { cwd: paths.neutral, quiet: true, timeout: 20_000, env: a && !a.active ? { GH_TOKEN: await ghToken(login) } : {} });
+  if (!/^[A-Za-z0-9-]+$/.test(login)) throw new Error('Invalid account name');
+  const r = await run('gh', ['api', `users/${login}`, '--jq', '.id'], { cwd: paths.neutral, quiet: true, timeout: 20_000 });
   return `${r.stdout.trim()}+${login}@users.noreply.github.com`;
-}
-async function ghToken(login) {
-  const r = await run('gh', ['auth', 'token', '--hostname', HOST, '--user', login], { cwd: paths.neutral, quiet: true, timeout: 15_000 });
-  return r.stdout.trim();
 }
 
 module.exports = { startLogin, cancelLogin, loginStatus: publicSession, switchTo, logout, list, identity, setIdentity, noreply };

@@ -4,9 +4,9 @@ import { store } from './store.js';
 import { navigate } from './router.js';
 
 const COMMANDS = [
-  ['Actions board', '#/board'], ['Feature branches', '#/feature'], ['All repositories: overview', '#/multi/overview'],
+  ['Repositories on GitHub (clone)', '#/github'], ['Actions board', '#/board'], ['Feature branches', '#/feature'], ['All repositories: overview', '#/multi/overview'],
   ['Bulk operations', '#/multi/bulk'], ['Branch cleanup', '#/multi/cleanup'], ['Search commits in all repositories', '#/multi/search'],
-  ['Activity log', '#/activity'], ['Settings', '#/settings'], ['Diagnostics', '#/settings/diagnostics'],
+  ['Activity log', '#/activity'], ['Settings', '#/settings'], ['Diagnostics', '#/settings/diagnostics'], ['Find repositories on this computer', '#/settings/setup'],
 ];
 
 export function openPalette() {

@@ -27,7 +27,7 @@ let scanning = null;
 
 function loadCache() {
   const c = readJson(paths.cache, null);
-  if (!c) return;
+  if (!c || (c.account || '') !== (config.get().currentAccount || '')) return; // never show another account's repositories
   for (const r of c.repos || []) repos.set(r.id, r);
   for (const [id, s] of Object.entries(c.summaries || {})) summaries.set(id, { ...s, stale: true });
   for (const [id, s] of Object.entries(c.slugs || {})) slugs.set(id, s);
@@ -40,7 +40,7 @@ function saveCacheSoon() {
     cacheTimer = null;
     try {
       writeJsonAtomic(paths.cache, {
-        repos: [...repos.values()], summaries: Object.fromEntries(summaries), slugs: Object.fromEntries(slugs), board,
+        account: config.get().currentAccount || '', repos: [...repos.values()], summaries: Object.fromEntries(summaries), slugs: Object.fromEntries(slugs), board,
       });
     } catch (e) { log.warn('Could not write cache', { error: e.message }); }
   }, 2000);
@@ -164,25 +164,12 @@ async function pollBoard() {
       targets.push(s);
     }
     if (!targets.length) return;
-    // group by the account that can see each owner
-    const owners = [...new Set(targets.map((t) => t.owner))];
-    const byOwner = {};
-    await Promise.all(owners.map(async (o) => {
-      const sample = targets.find((t) => t.owner === o).repo;
-      byOwner[o] = await gh.accountForOwner(o, sample).catch(() => null);
-    }));
-    const groups = new Map();
-    for (const t of targets) {
-      const login = byOwner[t.owner] || '';
-      if (!groups.has(login)) groups.set(login, []);
-      groups.get(login).push(t);
+    const login = config.get().currentAccount || null;
+    let next = {};
+    try { next = await gh.boardBatch(targets, login); } catch (e) {
+      for (const t of targets) next[`${t.owner}/${t.repo}`.toLowerCase()] = { error: e.message, kind: e.kind };
     }
-    const next = {};
-    for (const [login, list] of groups) {
-      try { Object.assign(next, await gh.boardBatch(list, login || null)); } catch (e) {
-        for (const t of list) next[`${t.owner}/${t.repo}`.toLowerCase()] = { error: e.message, kind: e.kind };
-      }
-    }
+    if (login !== (config.get().currentAccount || null)) return; // account changed while loading
     detectExternalPushes(board, next);
     for (const [k, v] of Object.entries(next)) {
       if (v.error && board[k] && !board[k].error && v.kind !== 'no-access') next[k] = { ...board[k], stale: true, error: v.error };
@@ -210,6 +197,8 @@ function detectExternalPushes(prev, next) {
 }
 
 // ---------- Actions: tracked runs ----------
+/** Only the open account's tracked runs are shown or polled; the others wait until you switch back. */
+function visibleTrackers() { const mine = config.get().currentAccount || ''; return trackers.filter((t) => (t.account || '') === mine); }
 
 let trackers = readJson(paths.state, {}).trackers || [];
 
@@ -225,12 +214,12 @@ function addTracker({ repoId, slug, sha, branch, reason, source = 'app', pr }) {
   if (existing) return existing;
   const t = {
     id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
-    repoId, slug: { owner: slug.owner, repo: slug.repo, label: slug.label }, sha, branch, reason, source, pr: pr || null,
+    repoId, slug: { owner: slug.owner, repo: slug.repo, label: slug.label, account: config.get().currentAccount || '' }, account: config.get().currentAccount || '', sha, branch, reason, source, pr: pr || null,
     createdAt: Date.now(), state: 'waiting', runs: [], conclusion: null, pinned: true, notified: false,
   };
   trackers.push(t);
   saveTrackers();
-  bus.emit('trackers', trackers);
+  bus.emit('trackers', visibleTrackers());
   pollTrackersSoon();
   return t;
 }
@@ -238,12 +227,12 @@ function addTracker({ repoId, slug, sha, branch, reason, source = 'app', pr }) {
 function trackRun({ repoId, slug, runId, title }) {
   const t = {
     id: `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
-    repoId, slug: { owner: slug.owner, repo: slug.repo, label: slug.label }, sha: null, runId: +runId, reason: title || `Run ${runId}`,
+    repoId, slug: { owner: slug.owner, repo: slug.repo, label: slug.label, account: config.get().currentAccount || '' }, account: config.get().currentAccount || '', sha: null, runId: +runId, reason: title || `Run ${runId}`,
     source: 'manual', createdAt: Date.now(), state: 'running', runs: [], conclusion: null, pinned: true, notified: false,
   };
   trackers.push(t);
   saveTrackers();
-  bus.emit('trackers', trackers);
+  bus.emit('trackers', visibleTrackers());
   pollTrackersSoon();
   return t;
 }
@@ -251,12 +240,13 @@ function trackRun({ repoId, slug, runId, title }) {
 function removeTracker(id) {
   trackers = trackers.filter((t) => t.id !== id);
   saveTrackers();
-  bus.emit('trackers', trackers);
+  bus.emit('trackers', visibleTrackers());
 }
 function clearDoneTrackers() {
-  trackers = trackers.filter((t) => t.state !== 'done' && t.state !== 'no-runs');
+  const mine = config.get().currentAccount || '';
+  trackers = trackers.filter((t) => (t.account || '') !== mine || (t.state !== 'done' && t.state !== 'no-runs'));
   saveTrackers();
-  bus.emit('trackers', trackers);
+  bus.emit('trackers', visibleTrackers());
 }
 
 const FAIL = new Set(['failure', 'timed_out', 'startup_failure', 'action_required']);
@@ -266,7 +256,8 @@ async function pollTrackers() {
   if (trackersRunning) return;
   trackersRunning = true;
   try {
-    const active = trackers.filter((t) => t.state === 'waiting' || t.state === 'running');
+    const mine = config.get().currentAccount || '';
+    const active = trackers.filter((t) => (t.state === 'waiting' || t.state === 'running') && (t.account || '') === mine);
     await queue.pool(active, 4, async (t) => {
       let runs;
       if (t.runId) runs = [await gh.runView(t.slug, t.runId)].filter(Boolean);
@@ -295,7 +286,7 @@ async function pollTrackers() {
   } finally {
     trackersRunning = false;
     saveTrackers();
-    bus.emit('trackers', trackers);
+    bus.emit('trackers', visibleTrackers());
   }
 }
 let soon = null;
@@ -323,15 +314,14 @@ async function pollMyPrs() {
   const cfg = config.get();
   if (!cfg.notifications || !cfg.notifyReviewRequests) return;
   try {
-    const mapped = new Set(Object.values(cfg.accountForOwner || {}));
-    const accs = (await gh.accounts()).filter((a) => a.host === 'github.com' && a.state === 'success' && (a.active || cfg.autoDetectAccounts || mapped.has(a.login)));
-    const next = { review: {}, mine: {} };
-    for (const a of accs) {
-      const d = await gh.myPrs(a.active ? null : a.login).catch(() => null);
-      if (!d) continue;
-      for (const p of d.review) next.review[`${p.repo}#${p.number}`] = p;
-      for (const p of d.mine) next.mine[`${p.repo}#${p.number}`] = p;
-    }
+    const login = cfg.currentAccount;
+    if (!login) { prState = null; bus.emit('myprs', { review: [], mine: [] }); return; }
+    const next = { review: {}, mine: {}, account: login };
+    const d = await gh.myPrs(login).catch(() => null);
+    if (!d || login !== config.get().currentAccount) return;
+    for (const p of d.review) next.review[`${p.repo}#${p.number}`] = p;
+    for (const p of d.mine) next.mine[`${p.repo}#${p.number}`] = p;
+    if (prState && prState.account !== login) prState = null; // the first poll after a switch never notifies
     if (prState) {
       for (const [k, p] of Object.entries(next.review)) {
         if (!prState.review[k]) emitAndToast({ level: 'info', title: `Review requested: ${p.repo}#${p.number}`, body: `${p.title} (by ${p.author})`, url: p.url });
@@ -357,6 +347,39 @@ function emitAndToast(n) {
 }
 function myPrsSnapshot() { return prState ? { review: Object.values(prState.review), mine: Object.values(prState.mine) } : null; }
 
+// ---------- account workspaces ----------
+/** Make sure the open account is one that is signed in; fall back to gh's active account, else none. */
+async function ensureAccount() {
+  let accs = [];
+  try { accs = (await gh.accounts(true)).filter((x) => x.host === 'github.com'); } catch {}
+  const cur = config.get().currentAccount;
+  let want = cur;
+  if (!cur || !accs.some((x) => x.login === cur)) want = (accs.find((x) => x.active) || accs[0] || { login: '' }).login;
+  if (want !== cur) config.update({ currentAccount: want });
+  config.adoptUnassigned(want);
+  return want;
+}
+
+/** Open another account's workspace: its folders, repositories, board and pull requests. Nothing carries over. */
+async function switchAccount(login) {
+  if (login) {
+    const accs = await gh.accounts(true);
+    if (!accs.some((x) => x.login === login && x.host === 'github.com')) throw new Error(`${login} is not signed in.`);
+  }
+  config.update({ currentAccount: login || '' });
+  gh.forgetAccounts();
+  for (const id of [...watchers.keys()]) unwatch(id);
+  repos.clear(); summaries.clear(); slugs.clear(); inflight.clear();
+  board = {}; boardAt = 0; prState = null;
+  bus.emit('repos', []);
+  bus.emit('board', { board, at: boardAt });
+  bus.emit('trackers', visibleTrackers());
+  bus.emit('myprs', { review: [], mine: [] });
+  await scan();
+  refreshAll().then(pollBoard).then(pollMyPrs).catch(() => {});
+  return login;
+}
+
 // ---------- timers ----------
 
 let boardVisible = 0;
@@ -372,7 +395,7 @@ function start() {
     };
     timers.push(setTimeout(loop, 1000));
   };
-  scan().then(refreshAll).then(pollBoard).catch((e) => log.error('Initial scan failed', { error: e.message }));
+  ensureAccount().then(scan).then(refreshAll).then(pollBoard).catch((e) => log.error('Initial scan failed', { error: e.message }));
   tick(async () => { if (Date.now() - lastScan > 10 * 60_000) await scan(); await refreshAll(); }, () => config.get().refreshSeconds);
   tick(pollBoard, () => (boardVisible && Date.now() - boardVisible < 5 * 60_000 ? config.get().boardRefreshSeconds : config.get().actionsRefreshSeconds));
   tick(pollTrackers, () => config.get().trackedRefreshSeconds);
@@ -388,6 +411,6 @@ function stop() { for (const t of timers) clearTimeout(t); for (const id of watc
 
 module.exports = {
   bus, scan, list, get, slugOf, refresh, refreshAll, resolveSlug, pollBoard, boardFor, setBoardVisible,
-  addTracker, trackRun, removeTracker, clearDoneTrackers, pollTrackers, trackers: () => trackers,
+  addTracker, trackRun, removeTracker, clearDoneTrackers, pollTrackers, trackers: visibleTrackers, switchAccount, ensureAccount,
   board: () => ({ board, at: boardAt }), myPrsSnapshot, pollMyPrs, start, stop, repos, slugs,
 };

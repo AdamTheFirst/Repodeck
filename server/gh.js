@@ -8,6 +8,7 @@ const config = require('./config');
 const log = require('./log');
 
 const HOST = 'github.com';
+const metaCache = new Map();
 const tokenCache = new Map(); // login -> { token, at }  (memory only, never logged or persisted)
 let accountsCache = null;
 
@@ -67,7 +68,7 @@ let rateLimitedUntil = 0;
 /** Low-level gh runner. owner selects the account mapped to that owner. */
 async function gh(args, { owner, sampleRepo, login, input, timeout = 60_000, repoLabel, quiet = false, okCodes } = {}) {
   if (Date.now() < rateLimitedUntil) throw ghError(`GitHub rate limit reached; waiting until ${new Date(rateLimitedUntil).toLocaleTimeString()}.`, 'rate-limit');
-  const acct = login || (owner ? await accountForOwner(owner, sampleRepo) : null);
+  const acct = login || accountForOwner();
   const env = await envFor(acct);
   try {
     return await run('gh', args, { cwd: paths.neutral, env, input, timeout, repo: repoLabel, quiet, okCodes, redact: env.GH_TOKEN ? [env.GH_TOKEN] : undefined });
@@ -99,48 +100,14 @@ const json = async (args, opts) => {
   return t ? JSON.parse(t) : null;
 };
 
-// ---------------- account ↔ owner mapping ----------------
-
-const probing = new Map();
-const resolved = new Map(); // owner -> { login, at }
-/** Which signed-in account to use for an owner. Detected once by probing a repository, then saved. */
-async function accountForOwner(owner, sampleRepo) {
-  const cfg = config.get();
-  if (cfg.accountForOwner[owner]) return cfg.accountForOwner[owner];
-  const key = owner.toLowerCase();
-  const r = resolved.get(key);
-  if (r && (r.login || Date.now() - r.at < 5 * 60_000)) return r.login;
-  if (!sampleRepo) return null; // active account
-  if (probing.has(key)) return probing.get(key);
-  const p = (async () => {
-    let accs = (await accounts()).filter((a) => a.host === HOST && a.state === 'success');
-    if (!cfg.autoDetectAccounts) accs = accs.filter((a) => a.active);
-    accs.sort((a, b) => (b.active ? 1 : 0) - (a.active ? 1 : 0));
-    for (const a of accs) {
-      try {
-        const env = await envFor(a.login);
-        await run('gh', ['api', `repos/${owner}/${sampleRepo}`, '--jq', '.full_name'], { cwd: paths.neutral, env, quiet: true, timeout: 20_000 });
-        if (accs.length > 1) {
-          config.update({ accountForOwner: { ...config.get().accountForOwner, [owner]: a.login } });
-          log.info(`Using GitHub account ${a.login} for ${owner}`);
-        }
-        return a.login;
-      } catch {}
-    }
-    return null;
-  })();
-  probing.set(key, p);
-  try {
-    const login = await p;
-    resolved.set(key, { login, at: Date.now() });
-    return login;
-  } finally { probing.delete(key); }
-}
-function forgetAccounts() { resolved.clear(); accountsCache = null; tokenCache.clear(); }
+// ---------------- account isolation ----------------
+// Every GitHub call is made as the account whose workspace is open. Other signed-in accounts are never used.
+function accountForOwner() { return config.get().currentAccount || null; }
+function forgetAccounts() { accountsCache = null; tokenCache.clear(); metaCache.clear(); }
 
 /** Check access for a repo slug: returns { ok, login, kind, message }. */
 async function checkAccess(slug) {
-  const login = await accountForOwner(slug.owner, slug.repo);
+  const login = slug.account || accountForOwner();
   try {
     const env = await envFor(login);
     await run('gh', ['api', `repos/${slug.owner}/${slug.repo}`, '--jq', '.full_name'], { cwd: paths.neutral, env, quiet: true, timeout: 20_000 });
@@ -151,11 +118,10 @@ async function checkAccess(slug) {
 }
 
 const R = (s) => ['-R', `${s.owner}/${s.repo}`];
-const O = (s) => ({ owner: s.owner, sampleRepo: s.repo, repoLabel: s.label || s.repo });
+const O = (s) => ({ owner: s.owner, login: s.account || undefined, repoLabel: s.label || s.repo });
 
 // ---------------- repository metadata ----------------
 
-const metaCache = new Map();
 async function repoMeta(s, force = false) {
   const key = `${s.owner}/${s.repo}`.toLowerCase();
   const c = metaCache.get(key);
@@ -532,24 +498,21 @@ async function repoList(owner, login) {
   return (await json(args, { login, owner, quiet: true })) || [];
 }
 
-/** Every repository the signed-in account(s) can see: own repos plus each organisation's. */
+/** Every repository the current account can see: its own plus each of its organisations'. */
 async function repoListAll() {
-  const cfg = config.get();
-  const accs = (await accounts()).filter((a) => a.host === HOST && a.state === 'success' && (a.active || cfg.autoDetectAccounts));
+  const login = accountForOwner();
+  if (!login) throw ghError('Sign in to GitHub first.', 'auth');
+  let orgs = [];
+  try { orgs = (await json(['api', 'user/orgs', '--jq', '[.[].login]'], { quiet: true })) || []; } catch {}
   const out = [];
   const seen = new Set();
-  for (const a of accs) {
-    const login = a.active ? null : a.login;
-    let orgs = [];
-    try { orgs = (await json(['api', 'user/orgs', '--jq', '[.[].login]'], { login: login || undefined, quiet: true })) || []; } catch {}
-    for (const owner of [a.login, ...orgs]) {
-      let list = [];
-      try { list = await json(['repo', 'list', owner, '--json', 'nameWithOwner,url,sshUrl,description,isPrivate,isArchived,updatedAt', '-L', '500'], { login: login || undefined, quiet: true }); } catch { continue; }
-      for (const r of list || []) {
-        if (seen.has(r.nameWithOwner.toLowerCase())) continue;
-        seen.add(r.nameWithOwner.toLowerCase());
-        out.push({ ...r, account: a.login, owner });
-      }
+  for (const owner of [login, ...orgs]) {
+    let list = [];
+    try { list = await json(['repo', 'list', owner, '--json', 'nameWithOwner,url,sshUrl,description,isPrivate,isArchived,isFork,updatedAt,primaryLanguage,defaultBranchRef', '-L', '1000'], { quiet: true }); } catch { continue; }
+    for (const r of list || []) {
+      if (seen.has(r.nameWithOwner.toLowerCase())) continue;
+      seen.add(r.nameWithOwner.toLowerCase());
+      out.push({ ...r, owner, language: r.primaryLanguage ? r.primaryLanguage.name : '', defaultBranch: r.defaultBranchRef ? r.defaultBranchRef.name : '', primaryLanguage: undefined, defaultBranchRef: undefined });
     }
   }
   return out.sort((x, y) => (y.updatedAt || '').localeCompare(x.updatedAt || ''));

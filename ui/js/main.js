@@ -19,6 +19,7 @@ function applyTheme() {
 // ---------- top bar ----------
 const NAV = [
   ['repo', 'Repositories', 'folder', () => { const id = store.selected || prefs.get('lastRepo') || (store.repos[0] && store.repos[0].id); navigate(id ? `#/repo/${id}/${store.tab}` : '#/repo'); }],
+  ['github', 'GitHub', 'external', () => navigate('#/github')],
   ['board', 'Actions board', 'bolt', () => navigate('#/board')],
   ['feature', 'Feature branches', 'branch', () => navigate('#/feature')],
   ['multi', 'All repositories', 'layers', () => navigate('#/multi')],
@@ -88,7 +89,7 @@ onRoute((parts) => {
     disposeView = renderRepo(main, id, store.tab, c);
   } else {
     const loaders = {
-      board: () => import('./views/board.js'), feature: () => import('./views/feature.js'), multi: () => import('./views/multi.js'),
+      github: () => import('./views/remote.js'), board: () => import('./views/board.js'), feature: () => import('./views/feature.js'), multi: () => import('./views/multi.js'),
       activity: () => import('./views/activity.js'), settings: () => import('./views/settings.js'),
     };
     const load = loaders[view];
@@ -105,6 +106,7 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); openPalette(); }
   else if (e.key === 'F5' || (e.ctrlKey && e.key.toLowerCase() === 'r')) { e.preventDefault(); const r = current(); act(() => rpc('repos.refresh', r ? { id: r.id } : {})); emit('refresh'); }
   else if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'b') { e.preventDefault(); navigate('#/board'); }
+  else if (e.key === '?' && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { e.preventDefault(); import('./help.js').then((m) => m.showShortcuts()); }
   else if (e.altKey && /^[1-7]$/.test(e.key) && store.view === 'repo' && store.selected) {
     e.preventDefault();
     const tabs = ['changes', 'graph', 'branches', 'stashes', 'prs', 'issues', 'actions'];

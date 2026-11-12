@@ -49,7 +49,7 @@ function githubPicker() {
   return { el, chosen: () => [...chosen.values()], clear: () => { chosen.clear(); draw(); }, onChange: (f) => onChange.add(f), reload: load };
 }
 
-async function cloneSelected(items, parent, protocol) {
+export async function cloneSelected(items, parent, protocol) {
   if (!items.length) return null;
   banner({ level: 'info', title: `Cloning ${plural(items.length, 'repository')} into ${parent}…`, timeout: 4000 });
   const res = await act(() => rpc('repo.cloneMany', { parent, items: items.map((r) => ({ url: protocol === 'ssh' ? r.sshUrl : `${r.url}.git`, name: r.nameWithOwner.split('/')[1] })) }));
@@ -59,7 +59,7 @@ async function cloneSelected(items, parent, protocol) {
   return res;
 }
 
-async function ensureRoot(p) {
+export async function ensureRoot(p) {
   const roots = store.config.roots || [];
   if (roots.some((r) => norm(r.path) === norm(p))) return;
   store.config = await rpc('config.update', { patch: { roots: [...roots, { path: p, name: p.split(/[\\/]/).filter(Boolean).pop() }] } });
@@ -152,7 +152,7 @@ export function setup(main) {
   const drawAccounts = () => rpc('account.list').then((r) => {
     if (!r.installed) { mount(accountsEl, h('span', { class: 'warn-box', style: { display: 'block' } }, 'GitHub CLI not found. Local repositories work; run the installer again to add it for pull requests and Actions.')); return; }
     mount(accountsEl, r.accounts.length
-      ? h('div', { class: 'row wrap' }, h('span', null, 'Signed in as ', r.accounts.map((a, i) => [i ? ', ' : '', h('strong', null, a.login)]), '. Repositories of all your accounts and organisations are listed.'),
+      ? h('div', { class: 'row wrap' }, h('span', null, 'Showing repositories of ', h('strong', null, r.current || '?'), ' and its organisations. These folders will belong to this account.'),
         h('span', { class: 'spacer' }), btn('Add another account', () => import('./account.js').then((m) => m.signIn()).then(() => setTimeout(() => { drawAccounts(); picker.reload(); }, 500)), { cls: 'small' }))
       : h('div', { class: 'row' }, h('span', { class: 'grow' }, 'Sign in to see and clone your GitHub repositories. Local folders work without it.'),
         btn('Sign in to GitHub', () => import('./account.js').then((m) => m.signIn()).then(() => setTimeout(() => { drawAccounts(); picker.reload(); }, 500)), { cls: 'small primary' })));

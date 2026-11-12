@@ -37,19 +37,17 @@ const ACCOUNTS = [
 
 function notFound() { const e = new Error('HTTP 404: Not Found'); e.stderr = 'HTTP 404: Not Found'; return e; }
 
-test('owner is mapped to the first account that can see it; tokens never appear in logged commands', async () => {
+test('every call runs as the open account; an inactive account gets its token through the environment only', async () => {
   config.load();
+  config.update({ currentAccount: 'work' });
+  gh.forgetAccounts();
   calls.length = 0;
-  handler = (args, opts) => {
+  handler = (args) => {
     if (args[0] === 'auth' && args[1] === 'status') return { stdout: ACCOUNTS };
-    if (args[0] === 'auth' && args[1] === 'token') return { stdout: 'gho_secret_work_token\n' };
-    if (args[0] === 'api' && args[1] === 'repos/acme-corp/api-service') return opts.env && opts.env.GH_TOKEN === 'gho_secret_work_token' ? { stdout: 'acme-corp/api-service' } : notFound();
+    if (args[0] === 'auth' && args[1] === 'token') return { stdout: 'gho_secret_work_token' };
     if (args[0] === 'pr' && args[1] === 'list') return { stdout: '[]' };
     return { stdout: '' };
   };
-  const login = await gh.accountForOwner('acme-corp', 'api-service');
-  assert.equal(login, 'work');
-  assert.equal(config.get().accountForOwner['acme-corp'], 'work', 'saved for next time');
   await gh.prList({ owner: 'acme-corp', repo: 'api-service' }, { filter: 'mine' });
   const list = calls.find((c) => c.args[0] === 'pr' && c.args[1] === 'list');
   assert.deepEqual(list.args.slice(2, 4), ['-R', 'acme-corp/api-service']);
@@ -57,21 +55,36 @@ test('owner is mapped to the first account that can see it; tokens never appear 
   assert.equal(list.opts.env.GH_TOKEN, 'gho_secret_work_token');
   assert.deepEqual(list.opts.redact, ['gho_secret_work_token'], 'token is redacted from the activity log');
   assert.ok(list.args.includes('--author') && list.args.includes('@me'));
+  const tok = calls.find((c) => c.args[0] === 'auth' && c.args[1] === 'token');
+  assert.deepEqual(tok.args.slice(-2), ['--user', 'work']);
 });
 
-test('with auto-detection off only the active account is tried', async () => {
-  config.update({ accountForOwner: {}, autoDetectAccounts: false });
+test('account isolation: the active account needs no token, and no other account is ever tried', async () => {
+  config.update({ currentAccount: 'personal' });
   gh.forgetAccounts();
   calls.length = 0;
-  handler = (args) => (args[0] === 'auth' && args[1] === 'status' ? { stdout: ACCOUNTS } : args[0] === 'api' ? notFound() : { stdout: '' });
-  const login = await gh.accountForOwner('other-org', 'thing');
-  assert.equal(login, null, 'active account cannot see it, and the other account is not tried');
-  assert.equal(calls.filter((c) => c.args[0] === 'auth' && c.args[1] === 'token').length, 0, 'no token requested for the inactive account');
-  config.update({ autoDetectAccounts: true });
+  handler = (args) => (args[0] === 'auth' && args[1] === 'status' ? { stdout: ACCOUNTS } : args[0] === 'api' ? notFound() : { stdout: '[]' });
+  const access = await gh.checkAccess({ owner: 'acme-corp', repo: 'api-service' });
+  assert.equal(access.ok, false);
+  assert.equal(access.login, 'personal');
+  assert.equal(calls.filter((c) => c.args[0] === 'auth' && c.args[1] === 'token').length, 0, 'the other account is not consulted');
+  assert.ok(calls.filter((c) => c.args[0] === 'api').every((c) => !c.opts.env || !c.opts.env.GH_TOKEN));
+});
+
+test('each account keeps its own folder list', () => {
+  config.update({ currentAccount: 'personal' });
+  config.update({ roots: [{ path: 'C:\code\mine', name: 'mine' }] });
+  config.update({ currentAccount: 'work' });
+  assert.deepEqual(config.get().roots, [], 'a new account starts with no folders');
+  config.update({ roots: [{ path: 'C:\code\work', name: 'work' }] });
+  config.update({ currentAccount: 'personal' });
+  assert.deepEqual(config.get().roots.map((r) => r.name), ['mine']);
+  config.update({ currentAccount: 'work' });
+  assert.deepEqual(config.get().roots.map((r) => r.name), ['work']);
+  config.update({ currentAccount: 'personal' });
 });
 
 test('board batch: one GraphQL call for many repos, runs mapped, missing repos reported', async () => {
-  config.update({ accountForOwner: { acme: 'personal' } });
   calls.length = 0;
   handler = (args) => {
     if (args[0] === 'auth' && args[1] === 'status') return { stdout: ACCOUNTS };

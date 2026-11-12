@@ -248,7 +248,6 @@ const H = {
     if (JSON.stringify(before.roots) !== JSON.stringify(cfg.roots) || JSON.stringify(before.ignore) !== JSON.stringify(cfg.ignore) || before.scanDepth !== cfg.scanDepth) {
       state.scan().then(state.refreshAll).then(state.pollBoard);
     }
-    if (JSON.stringify(before.accountForOwner) !== JSON.stringify(cfg.accountForOwner)) { gh.forgetAccounts(); state.pollBoard(); }
     return cfg;
   },
   'activity.list': (p) => log.list(p.repoId ? repo({ id: p.repoId }).label : null, p.limit || 500),
@@ -272,7 +271,7 @@ const H = {
     try { accounts = (await gh.accounts(true)).map((a) => ({ host: a.host, login: a.login, active: a.active, state: a.state, scopes: a.scopes })); } catch {}
     return {
       git: await v('git', ['--version']), gh: await v('gh', ['--version']), node: process.version, platform: `${process.platform} ${require('node:os').release()}`,
-      dataDir: paths.data, accounts, owners: config.get().accountForOwner,
+      dataDir: paths.data, accounts, currentAccount: config.get().currentAccount,
       repos: state.list().length,
     };
   },
@@ -302,6 +301,7 @@ const H = {
     });
     return res.map((x) => (x.ok ? x.value : { error: x.error.message }));
   },
+  'app.about': () => ({ version: require('../package.json').version, installDir: path.resolve(__dirname, '..'), logDir: paths.logs, dataDir: paths.data }),
   'app.quit': () => { setTimeout(() => process.exit(0), 200); return { ok: true }; },
   'app.boardVisible': (p) => { state.setBoardVisible(!!p.visible); return { ok: true }; },
   'open.url': (p) => { openExternal(p.url); return { ok: true }; },
@@ -330,19 +330,22 @@ const H = {
     await state.scan(); state.refreshAll();
     return { path: dest };
   },
-  'account.list': () => require('./accounts').list(),
+  'account.list': async () => {
+    const r = await require('./accounts').list();
+    const cfg = config.get();
+    return { ...r, current: cfg.currentAccount, accounts: r.accounts.map((acc) => ({ ...acc, current: acc.login === cfg.currentAccount, folders: (cfg.accountRoots[acc.login] || []).length })) };
+  },
   'account.login': () => require('./accounts').startLogin(),
   'account.loginStatus': () => require('./accounts').loginStatus(),
   'account.loginCancel': (p) => require('./accounts').cancelLogin(p.sessionId),
-  'account.switch': async (p) => { await require('./accounts').switchTo(p.login); state.pollBoard(); return require('./accounts').list(); },
+  // Open that account's workspace in git-helper. Does not change which account gh uses in a terminal.
+  'account.use': async (p) => { await state.switchAccount(p.login); return H['account.list'](); },
+  // Also make it the default for the gh command in terminals.
+  'account.makeDefault': async (p) => { await require('./accounts').switchTo(p.login); return H['account.list'](); },
   'account.logout': async (p) => {
     await require('./accounts').logout(p.login);
-    // forget owner mappings that pointed at the removed account
-    const map = { ...config.get().accountForOwner };
-    for (const [o, l] of Object.entries(map)) if (l === p.login) delete map[o];
-    config.update({ accountForOwner: map });
-    state.pollBoard();
-    return require('./accounts').list();
+    if (config.get().currentAccount === p.login) await state.switchAccount(await pickOther());
+    return H['account.list']();
   },
   'account.identity': () => require('./accounts').identity(),
   'account.setIdentity': (p) => require('./accounts').setIdentity(p),
@@ -815,6 +818,11 @@ const H = {
     return res.filter((x) => x.ok).flatMap((x) => x.value).sort((a, b) => b.commitTime - a.commitTime).slice(0, 300);
   },
 };
+
+async function pickOther() {
+  const accs = (await gh.accounts(true)).filter((acc) => acc.host === 'github.com');
+  return (accs.find((acc) => acc.active) || accs[0] || { login: '' }).login;
+}
 
 /** After a PR merge, wait for GitHub to report the merge commit, then track its runs. */
 function trackMergeCommit(id, s, number, attempt = 0) {

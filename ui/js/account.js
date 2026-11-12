@@ -1,7 +1,7 @@
 // GitHub accounts and commit identity: top-bar chip, account panel, sign-in dialog.
-import { h, mount, icon, btn, act, modal, form, banner, confirmDanger, copyText, popover, showError } from './dom.js';
+import { h, mount, icon, btn, act, modal, form, banner, confirmDanger, copyText, popover, showError, menuBelow, plural } from './dom.js';
 import { rpc } from './api.js';
-import { store, emit } from './store.js';
+import { store, emit, setRepos } from './store.js';
 import { navigate } from './router.js';
 
 let info = null;      // { installed, accounts: [{ login, active, avatar, state }] }
@@ -14,17 +14,17 @@ export async function loadAccounts() {
   return info;
 }
 
-const active = () => (info && info.accounts.find((a) => a.active)) || null;
+const current = () => (info && info.accounts.find((a) => a.current)) || null;
 const avatar = (a, size = 22) => h('img', { class: 'avatar', src: a.avatar, alt: '', width: size, height: size, referrerpolicy: 'no-referrer', onerror: (e) => { e.target.style.visibility = 'hidden'; } });
 
-/** The chip shown in the top bar. */
+/** The chip shown in the top bar: the account whose workspace is open. */
 export function accountChip() {
   if (!info) return h('span');
-  const a = active();
+  const a = current();
   if (!info.installed) return h('button', { class: 'chip warn', title: 'The GitHub CLI is not installed', onclick: () => navigate('#/settings/diagnostics') }, icon('warn', 'sm'), 'GitHub CLI missing');
   if (!a) return h('button', { class: 'chip primary', onclick: () => signIn() }, icon('external', 'sm'), 'Sign in to GitHub');
   const others = info.accounts.length - 1;
-  return h('button', { class: 'chip', title: 'GitHub accounts and commit identity', onclick: (e) => openPanel(e.currentTarget) },
+  return h('button', { class: 'chip', title: 'Switch account, sign in or out, commit identity', onclick: (e) => openPanel(e.currentTarget) },
     avatar(a), h('span', { class: 'ellipsis', style: { maxWidth: '140px' } }, a.login), others > 0 ? h('span', { class: 'faint' }, `+${others}`) : null, icon('chevronDown', 'sm'));
 }
 
@@ -32,49 +32,69 @@ async function openPanel(anchor) {
   const body = h('div', { class: 'account-panel' }, h('div', { class: 'skeleton' }, 'Loading…'));
   const close = popover(anchor, body);
   await Promise.all([loadAccounts(), rpc('account.identity').then((x) => { identity = x; }).catch(() => { identity = null; })]);
-  const owners = store.config.accountForOwner || {};
-  const usedFor = (login) => Object.entries(owners).filter(([, l]) => l === login).map(([o]) => o);
   mount(body,
     h('div', { class: 'ap-section' }, h('div', { class: 'ap-title' }, 'GitHub accounts'),
-      info.accounts.map((a) => h('div', { class: `ap-account ${a.active ? 'active' : ''}` },
+      h('div', { class: 'faint', style: { fontSize: '12px' } }, 'Each account has its own folders and repositories. Switching shows only that account’s.'),
+      info.accounts.map((a) => h('div', { class: `ap-account ${a.current ? 'active' : ''}`, style: { cursor: a.current ? 'default' : 'pointer' }, onclick: () => { if (!a.current) { close(); useAccount(a.login); } } },
         avatar(a, 32),
         h('div', { class: 'grow', style: { minWidth: 0 } },
-          h('div', { class: 'row', style: { gap: '6px' } }, h('strong', { class: 'ellipsis' }, a.login), a.active ? h('span', { class: 'badge accent' }, 'active') : null, a.state !== 'success' ? h('span', { class: 'badge bad' }, 'needs sign-in') : null),
-          h('div', { class: 'sub ellipsis' }, usedFor(a.login).length ? `Used for ${usedFor(a.login).join(', ')}` : a.active ? 'Used for everything else' : 'Used automatically where it has access')),
+          h('div', { class: 'row', style: { gap: '6px' } }, h('strong', { class: 'ellipsis' }, a.login), a.current ? h('span', { class: 'badge accent' }, 'open') : null,
+            a.state !== 'success' ? h('span', { class: 'badge bad' }, 'needs sign-in') : null),
+          h('div', { class: 'sub ellipsis' }, a.folders ? plural(a.folders, 'folder') : 'No folders yet', a.active ? ' · default in terminal' : '')),
         h('div', { class: 'row', style: { gap: '4px' } },
-          !a.active ? btn('Make active', async () => { close(); await doSwitch(a.login); }, { cls: 'small', title: 'Also changes the active account for gh in your terminal' }) : null,
-          a.state !== 'success' ? btn('Sign in again', () => { close(); signIn(); }, { cls: 'small' }) : null,
-          btn('', () => { close(); signOut(a.login); }, { cls: 'small icon ghost', iconName: 'x', title: `Sign out ${a.login}` })))),
+          !a.current ? btn('Switch', (e) => { e.stopPropagation(); close(); useAccount(a.login); }, { cls: 'small primary' }) : null,
+          btn('', (e) => {
+            e.stopPropagation();
+            menuBelow(e.currentTarget, [
+              { label: 'Open profile on GitHub', icon: 'external', action: () => rpc('open.url', { url: `https://github.com/${a.login}` }) },
+              { label: 'Also use for gh in the terminal', icon: 'terminal', disabled: a.active, action: () => act(() => rpc('account.makeDefault', { login: a.login }), { ok: `${a.login} is now the default for gh in terminals` }).then(loadAccounts) },
+              a.state !== 'success' ? { label: 'Sign in again', icon: 'refresh', action: () => { close(); signIn(); } } : null,
+              '-',
+              { label: `Sign out ${a.login}`, icon: 'x', danger: true, action: () => { close(); signOut(a.login); } },
+            ]);
+          }, { cls: 'small icon ghost', iconName: 'more', title: 'More' })))),
       h('div', { class: 'row', style: { marginTop: '6px' } }, btn('Add another account', () => { close(); signIn(); }, { cls: 'small', iconName: 'plus' }))),
     h('div', { class: 'ap-section' }, h('div', { class: 'ap-title' }, 'Commits are signed as'),
       identity && (identity.name || identity.email)
         ? h('div', { class: 'row' }, h('div', { class: 'grow', style: { minWidth: 0 } }, h('div', { class: 'ellipsis' }, identity.name || h('span', { class: 'faint' }, 'no name')), h('div', { class: 'sub ellipsis' }, identity.email || 'no email')),
           btn('Change', () => { close(); editIdentity(); }, { cls: 'small' }))
         : h('div', { class: 'row' }, h('span', { class: 'warn-box grow' }, 'Not set: git will refuse to commit.'), btn('Set', () => { close(); editIdentity(); }, { cls: 'small primary' }))),
-    h('div', { class: 'ap-foot' }, h('a', { onclick: () => { close(); navigate('#/settings'); } }, 'Account settings'), h('span', { class: 'spacer' }),
-      h('a', { onclick: () => { close(); navigate('#/settings/diagnostics'); } }, 'Check access per repository')));
+    h('div', { class: 'ap-foot' }, h('a', { onclick: () => { close(); navigate('#/github'); } }, 'Repositories on GitHub'), h('span', { class: 'spacer' }),
+      h('a', { onclick: () => { close(); navigate('#/settings'); } }, 'Folders and settings')));
 }
 
-async function refreshEverything() {
+/** After the open account changed: reload settings and lists, and land somewhere sensible. */
+async function afterAccountChange() {
   await loadAccounts();
-  rpc('board.refresh').catch(() => {});
-  rpc('myprs.refresh').catch(() => {});
+  store.config = await rpc('config.get');
+  emit('config');
+  const { repos, roots } = await rpc('repos.list');
+  store.roots = roots;
+  store.selected = null;
+  store.board = {}; store.trackers = await rpc('trackers.list').catch(() => []); store.myprs = null;
+  setRepos(repos);
+  emit('board'); emit('trackers'); emit('myprs');
+  if (current() && !store.config.roots.length) navigate('#/settings/setup');
+  else navigate('#/repo');
 }
 
-async function doSwitch(login) {
-  const r = await act(() => rpc('account.switch', { login }), { ok: `${login} is now the active GitHub account` });
-  if (r) refreshEverything();
+export async function useAccount(login) {
+  const r = await act(() => rpc('account.use', { login }));
+  if (!r) return;
+  await afterAccountChange();
+  banner({ level: 'success', title: `Now showing ${login}`, body: store.config.roots.length ? null : 'This account has no folders yet. Pick its folders or clone its repositories.', timeout: 4000 });
 }
 
 async function signOut(login) {
+  const a = info.accounts.find((x) => x.login === login);
   const ok = await confirmDanger({
     title: `Sign out ${login}?`,
-    message: `git-helper and the gh command in your terminal will stop using ${login}. Repositories only it can see will show "no access" until you sign in again.`,
+    message: `git-helper and the gh command in your terminal will stop using ${login}.${a && a.folders ? ` Its ${plural(a.folders, 'folder')} stay assigned to it and come back when you sign in again.` : ''} Nothing on disk is deleted.`,
     confirmLabel: 'Sign out',
   });
   if (!ok) return;
   const r = await act(() => rpc('account.logout', { login }), { ok: `Signed out ${login}` });
-  if (r) refreshEverything();
+  if (r) afterAccountChange();
 }
 
 /** Device-flow sign-in: show the code, open GitHub, wait for approval. */
@@ -105,9 +125,11 @@ export async function signIn() {
         stop = true;
         const dlgEl = codeEl.closest('.modal');
         if (dlgEl && dlgEl.closeModal) dlgEl.closeModal('done');
-        await refreshEverything();
-        const a = active();
-        banner({ level: 'success', title: `Signed in${a ? ` as ${a.login}` : ''}`, timeout: 4000 });
+        await loadAccounts();
+        const fresh = info.accounts.find((x) => x.active);
+        if (fresh && !fresh.current) await rpc('account.use', { login: fresh.login }).catch(() => {});
+        await afterAccountChange();
+        banner({ level: 'success', title: `Signed in${fresh ? ` as ${fresh.login}` : ''}`, timeout: 4000 });
         break;
       }
       if (s.state === 'failed' || s.state === 'cancelled') {
