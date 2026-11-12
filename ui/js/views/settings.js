@@ -117,7 +117,7 @@ function actions(el) {
       toggle('notifications', 'Windows notifications', 'When a tracked run finishes, a review is requested, or your pull request checks finish'),
       toggle('notifySound', 'Play a sound'),
       toggle('notifyReviewRequests', 'Watch my pull requests and review requests'),
-      toggle('trackExternalRuns', 'Track pushes made outside git-helper', 'New commits on a default branch (from a terminal or a teammate) are followed on the Actions board too')),
+      toggle('trackExternalRuns', 'Track pushes made outside Repodeck', 'New commits on a default branch (from a terminal or a teammate) are followed on the Actions board too')),
     head('Refresh intervals'),
     card(
       number('actionsRefreshSeconds', 'Default-branch status', 'One GitHub request covers every repository', 30, 'seconds'),
@@ -139,7 +139,7 @@ async function account(el) {
         !a.current ? btn('Switch', () => A.useAccount(a.login), { cls: 'small primary' }) : null))
         : h('div', { class: 'empty' }, info.installed ? 'No GitHub account is signed in.' : 'The GitHub CLI is not installed. Run Setup again and choose Repair.')),
     h('div', { class: 'row', style: { margin: '10px 0 0' } }, info.installed ? btn(info.accounts.length ? 'Add another account' : 'Sign in to GitHub', () => A.signIn(), { cls: info.accounts.length ? '' : 'primary', iconName: 'plus' }) : null),
-    head('Commit identity', 'The name and email recorded in every commit you make, in git-helper and in the terminal.'),
+    head('Commit identity', 'The name and email recorded in every commit you make, in Repodeck and in the terminal.'),
     card(row(id.name || 'No name set', id.email || 'No email set', btn('Change…', () => A.editIdentity().then(() => account(el)), { cls: 'small' }))));
 }
 
@@ -162,8 +162,8 @@ function app(el) {
       choice('theme', 'Theme', null, [['system', 'Follow Windows'], ['light', 'Light'], ['dark', 'Dark']]),
       toggle('keepRunningWhenClosed', 'Keep running after the window closes', 'So notifications still arrive. Reopen from the Start menu.'),
       number('port', 'Local port', 'Takes effect after a restart', 1025),
-      row('Quit git-helper', 'Stops the background process', btn('Quit', async () => {
-        if (await confirmDanger({ title: 'Quit git-helper?', message: 'Stops the background process. Start it again from the Start menu.', confirmLabel: 'Quit', danger: false })) { await rpc('app.quit'); mount(document.body, h('div', { class: 'empty' }, 'git-helper has stopped. You can close this window.')); }
+      row('Quit Repodeck', 'Stops the background process', btn('Quit', async () => {
+        if (await confirmDanger({ title: 'Quit Repodeck?', message: 'Stops the background process. Start it again from the Start menu.', confirmLabel: 'Quit', danger: false })) { await rpc('app.quit'); mount(document.body, h('div', { class: 'empty' }, 'Repodeck has stopped. You can close this window.')); }
       }, { cls: 'small danger' }))));
 }
 
@@ -174,7 +174,7 @@ async function diagnostics(el) {
   const results = h('div');
   const ok = (v) => !/not available/.test(v);
   const tool = (name, v) => row(name, null, h('span', { class: `badge ${ok(v) ? 'ok' : 'bad'}` }, v));
-  mount(el, head('Diagnostics', 'What git-helper found on this computer.'),
+  mount(el, head('Diagnostics', 'What Repodeck found on this computer.'),
     card(tool('git', d.git), tool('GitHub CLI', d.gh), tool('Node.js', d.node), row('Windows', null, h('span', { class: 'muted' }, d.platform)),
       row('Data folder', 'Settings, logs and safety copies of discarded changes', h('div', { class: 'row' }, h('span', { class: 'mono muted ellipsis', style: { maxWidth: '300px' } }, d.dataDir), btn('Copy', () => copyText(d.dataDir), { cls: 'small' })))),
     head('Connectivity', `Checks that each repository's remote is reachable with git and visible to ${d.currentAccount || 'the signed-in account'}. Read-only.`),
@@ -197,7 +197,7 @@ async function about(el) {
   const a = await rpc('app.about').catch(() => ({ version: '?' }));
   mount(el, head('About'),
     card(
-      h('div', { class: 'set-row' }, h('img', { src: '/icon.svg', width: 44, height: 44, alt: '' }), h('div', { class: 'set-label' }, h('div', { class: 'set-name', style: { fontSize: '16px' } }, 'git-helper'), h('div', { class: 'set-desc' }, `Version ${a.version}`))),
+      h('div', { class: 'set-row' }, h('img', { src: '/icon.svg', width: 44, height: 44, alt: '' }), h('div', { class: 'set-label' }, h('div', { class: 'set-name', style: { fontSize: '16px' } }, 'Repodeck'), h('div', { class: 'set-desc' }, `Version ${a.version}`))),
       row('Installed in', null, h('span', { class: 'mono muted' }, a.installDir || '')),
       row('Logs', 'Every git and GitHub command is also listed under Activity', h('div', { class: 'row' }, btn('Open activity', () => navigate('#/activity'), { cls: 'small' }), btn('Copy log folder', () => copyText(a.logDir), { cls: 'small' }))),
       row('Keyboard shortcuts', null, btn('Show', () => import('../help.js').then((m) => m.showShortcuts()), { cls: 'small' })),

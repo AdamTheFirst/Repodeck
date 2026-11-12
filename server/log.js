@@ -17,7 +17,7 @@ function init(dir) {
   logDir = dir;
 }
 
-function file() { return logDir && path.join(logDir, 'git-helper.log'); }
+function file() { return logDir && path.join(logDir, 'repodeck.log'); }
 
 function rotate() {
   const f = file();
@@ -32,7 +32,7 @@ function rotate() {
 
 function write(level, msg, extra) {
   const line = `${new Date().toISOString()} ${level} ${msg}${extra ? ' ' + JSON.stringify(extra) : ''}\n`;
-  if (process.env.GIT_HELPER_DEBUG) process.stderr.write(line);
+  if (process.env.REPODECK_DEBUG) process.stderr.write(line);
   if (!logDir) return;
   try { rotate(); fs.appendFileSync(file(), line); } catch {}
 }

@@ -12,7 +12,7 @@ labels: bug
 1.
 
 **Details**
-- git-helper version (Settings → About):
+- Repodeck version (Settings → About):
 - Windows version:
 - From Settings → Diagnostics: git / GitHub CLI / Node.js versions
 - The failing command and its output from the Activity page (remove private names)

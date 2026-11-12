@@ -1,8 +1,8 @@
 # Security
 
-## How git-helper is exposed
+## How Repodeck is exposed
 
-git-helper runs a small HTTP server on your own machine so its window (a Microsoft Edge app window) can talk to it.
+Repodeck runs a small HTTP server on your own machine so its window (a Microsoft Edge app window) can talk to it.
 
 - It listens on `127.0.0.1` only. Other machines on your network cannot reach it.
 - Every request must carry a random session token created at each start. The token is embedded in the page served to the app window and is never written anywhere other web pages can read.
@@ -14,12 +14,12 @@ git-helper runs a small HTTP server on your own machine so its window (a Microso
 ## Commands and credentials
 
 - git and the GitHub CLI (`gh`) are started with argument lists, never through a shell, so names and messages cannot inject commands.
-- git-helper never stores tokens. When a repository owner is mapped to a GitHub account that is signed in to `gh` but not active, git-helper asks `gh auth token --user <account>` for that account's token, keeps it in memory for up to ten minutes, passes it to `gh` through the `GH_TOKEN` environment variable and removes it from anything it logs.
+- Repodeck never stores tokens. Each window works as one GitHub account. If that account is signed in to `gh` but is not the one `gh` uses by default, Repodeck asks `gh auth token --user <account>` for its token, keeps it in memory for up to ten minutes, passes it to `gh` through the `GH_TOKEN` environment variable and removes it from anything it logs. Other signed-in accounts are never used.
 - Nothing is sent anywhere except by git and gh themselves. There is no telemetry.
 
 ## Data on disk
 
-Settings, logs, a status cache, pending review comments and safety copies of discarded changes are kept in `%LOCALAPPDATA%\git-helper`. Safety copies can contain your source code; they are deleted after 30 days.
+Settings, logs, a status cache, pending review comments and safety copies of discarded changes are kept in `%LOCALAPPDATA%\Repodeck`. Safety copies can contain your source code; they are deleted after 30 days.
 
 ## Reporting a problem
 

@@ -527,10 +527,10 @@ async function switchBranch(repo, { name, mode = 'carry', remoteRef }) {
     const local = name || remoteRef.replace(/^[^/]+\//, '');
     assertName(local);
     if (await refExists(repo, `refs/heads/${local}`)) {
-      if (mode === 'stash') await stashPush(repo, { message: `git-helper: before switching to ${local}`, includeUntracked: true });
+      if (mode === 'stash') await stashPush(repo, { message: `Repodeck: before switching to ${local}`, includeUntracked: true });
       await git(repo, ['switch', local]);
     } else {
-      if (mode === 'stash') await stashPush(repo, { message: `git-helper: before switching to ${local}`, includeUntracked: true });
+      if (mode === 'stash') await stashPush(repo, { message: `Repodeck: before switching to ${local}`, includeUntracked: true });
       await git(repo, ['switch', '-c', local, '--track', remoteRef]);
     }
     return { branch: local };
@@ -539,7 +539,7 @@ async function switchBranch(repo, { name, mode = 'carry', remoteRef }) {
   if (mode === 'stash') {
     const st = await status(repo);
     if (st.staged.length + st.unstaged.length + st.untracked.length) {
-      await stashPush(repo, { message: `git-helper: before switching to ${name}`, includeUntracked: true });
+      await stashPush(repo, { message: `Repodeck: before switching to ${name}`, includeUntracked: true });
     }
   }
   await git(repo, ['switch', name]);

@@ -1,4 +1,4 @@
-// Running git-helper windows. One process per account at most; each records itself in
+// Running Repodeck windows. One process per account at most; each records itself in
 // instance-<account>.json so a second launch can find it instead of starting a duplicate.
 'use strict';
 const fs = require('node:fs');

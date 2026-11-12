@@ -176,7 +176,7 @@ const BULK = {
   stash: {
     label: 'Stash changes',
     check: (s) => s.dirty ? (s.counts.conflicted ? 'has conflicts' : null) : 'nothing to stash',
-    run: (r, a) => git.stashPush(r, { message: a.message || 'git-helper bulk stash', includeUntracked: true }),
+    run: (r, a) => git.stashPush(r, { message: a.message || 'Repodeck bulk stash', includeUntracked: true }),
   },
   returnDefault: {
     label: 'Return to default branch',
@@ -340,7 +340,7 @@ const H = {
   'account.login': () => require('./accounts').startLogin(),
   'account.loginStatus': () => require('./accounts').loginStatus(),
   'account.loginCancel': (p) => require('./accounts').cancelLogin(p.sessionId),
-  // Open that account's workspace in git-helper. Does not change which account gh uses in a terminal.
+  // Open that account's workspace in Repodeck. Does not change which account gh uses in a terminal.
   'account.use': async (p) => {
     const inst = require('./instances');
     if (p.login && await inst.find(p.login)) { const e = new Error(`${p.login} is already open in another window. Only one window per account is allowed.`); e.kind = 'open-elsewhere'; throw e; }
@@ -654,7 +654,7 @@ const H = {
     if (st.staged.length + st.unstaged.length && p.mode !== 'carry' && p.mode !== 'stash') {
       const e = new Error('You have uncommitted changes.'); e.kind = 'dirty'; throw e;
     }
-    if (p.mode === 'stash' && st.staged.length + st.unstaged.length + st.untracked.length) await git.stashPush(r, { message: `git-helper: before checking out PR #${pr.number}`, includeUntracked: true });
+    if (p.mode === 'stash' && st.staged.length + st.unstaged.length + st.untracked.length) await git.stashPush(r, { message: `Repodeck: before checking out PR #${pr.number}`, includeUntracked: true });
     if (!pr.isCrossRepository) {
       await git.fetch(r, { remote: rem });
       return git.switchBranch(r, { name: pr.headRefName, remoteRef: `${rem}/${pr.headRefName}` });

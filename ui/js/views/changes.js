@@ -109,6 +109,7 @@ export function render(view, r) {
   // ---------- file list ----------
   function renderList() {
     const total = GROUPS.reduce((a, [g]) => a + data[g].length, 0);
+    if (!amend.checked) commitBtn.lastChild.textContent = data.staged.length ? `Commit ${plural(data.staged.length, 'staged file')}` : total ? 'Commit all changes' : 'Commit';
     mount(listHead,
       h('strong', null, total ? plural(total, 'change') : 'No changes'), h('span', { class: 'spacer' }),
       h('div', { class: 'pill-tabs' },

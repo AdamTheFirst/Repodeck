@@ -48,33 +48,60 @@ export async function runBulk(op, ids, args = {}, label) {
 
 // ---------- overview ----------
 function overview(page) {
-  let open = null;
   function draw() {
     const rows = store.repos.filter((r) => r.summary).map((r) => ({ r, s: r.summary }));
     const go = (x, tab = 'changes') => navigate(`#/repo/${x.r.id}/${tab}`);
     const run = (method, x, ok) => act(() => rpc(method, { id: x.r.id }), { ok: `${ok} ${x.r.label}` });
-    const cats = [
-      { key: 'dirty', title: 'Uncommitted changes', icon: 'diff', list: rows.filter((x) => x.s.dirty), desc: (x) => plural(x.s.dirty, 'change'), action: (x) => btn('Review', () => go(x), { cls: 'small' }) },
-      { key: 'unpushed', title: 'Unpushed commits', icon: 'push', list: rows.filter((x) => x.s.ahead || (!x.s.upstream && x.s.unpushed)), desc: (x) => (x.s.upstream ? `${plural(x.s.ahead, 'commit')} to push to ${x.s.upstream}` : `${plural(x.s.unpushed, 'commit')} on ${x.s.branch}, not published`), action: (x) => btn(x.s.upstream ? 'Push' : 'Publish', () => run('repo.push', x, 'Pushed'), { cls: 'small primary' }) },
-      { key: 'behind', title: 'Behind upstream', icon: 'pull', list: rows.filter((x) => x.s.behind), desc: (x) => `${plural(x.s.behind, 'commit')} to pull`, action: (x) => btn('Pull', () => run('repo.pull', x, 'Pulled'), { cls: 'small primary', disabled: !!x.s.dirty, title: x.s.dirty ? 'Commit or stash changes first' : '' }) },
-      { key: 'off', title: 'Not on default branch', icon: 'branch', list: rows.filter((x) => x.s.branch && x.s.defaultBranch && x.s.branch !== x.s.defaultBranch), desc: (x) => `on ${x.s.branch}${x.s.behindDefault ? `, ${x.s.behindDefault} behind ${x.s.defaultBranch}` : ''}`, action: (x) => btn('Branches', () => go(x, 'branches'), { cls: 'small' }) },
-      { key: 'stash', title: 'Stashes', icon: 'stash', list: rows.filter((x) => x.s.stash), desc: (x) => plural(x.s.stash, 'stash'), action: (x) => btn('View', () => go(x, 'stashes'), { cls: 'small' }) },
-      { key: 'busy', title: 'In progress or blocked', icon: 'warn', list: rows.filter((x) => (x.s.inProgress || []).length || x.s.locked || x.s.detached || x.s.error), desc: (x) => [...(x.s.inProgress || []).map((o) => `${o} in progress`), x.s.locked ? 'index locked' : null, x.s.detached ? 'detached HEAD' : null, x.s.error ? 'cannot read status' : null].filter(Boolean).join(', '), action: (x) => btn('Open', () => go(x), { cls: 'small' }) },
-    ];
-    if (open && !cats.find((c) => c.key === open).list.length) open = null;
-    const shown = open ? cats.filter((c) => c.key === open) : cats.filter((c) => c.list.length);
-    const clean = rows.length - store.repos.filter(needsAttention).length;
+    const dirty = rows.filter((x) => x.s.dirty);
+    const unpushed = rows.filter((x) => x.s.ahead || (!x.s.upstream && x.s.unpushed));
+    const behind = rows.filter((x) => x.s.behind);
+    const off = rows.filter((x) => x.s.branch && x.s.defaultBranch && x.s.branch !== x.s.defaultBranch);
+    const stashes = rows.filter((x) => x.s.stash);
+    const blocked = rows.filter((x) => (x.s.inProgress || []).length || x.s.locked || x.s.detached || x.s.error);
+    const clean = rows.filter((x) => !needsAttention(x.r) && !blocked.includes(x) && !off.includes(x));
+    const name = (x) => h('strong', { class: 'ellipsis', style: { width: '150px', flex: 'none' }, title: x.r.label }, x.r.name);
+    const line = (x, mid, action) => h('div', { class: 'list-row', onclick: () => go(x) }, name(x), mid, h('span', { onclick: (e) => e.stopPropagation() }, action));
+    const two = (top, sub) => h('div', { class: 'grow', style: { minWidth: 0 } }, h('div', { class: 'ellipsis' }, top), sub ? h('div', { class: 'faint ellipsis', style: { fontSize: '12px' } }, sub) : null);
+    const card = (title, badge, list, note, headAction) => h('section', { class: 'panel' },
+      h('div', { class: 'panel-head' }, h('h3', { class: 'grow' }, title), badge, headAction || null),
+      list.length ? list : h('div', { class: 'empty', style: { padding: '22px' } }, 'Nothing here.'),
+      h('div', { class: 'card-note' }, note));
+    const totalFiles = dirty.reduce((n, x) => n + x.s.dirty, 0);
+    const pushCount = (x) => (x.s.upstream ? x.s.ahead : x.s.unpushed);
+    const shared = (() => { const m = new Map(); for (const x of off) m.set(x.s.branch, (m.get(x.s.branch) || 0) + 1); return [...m].filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1])[0]; })();
+
     mount(page,
-      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'), h('div', { class: 'muted' }, `${plural(store.repos.length, 'repository')}; ${clean} with nothing to do`)),
+      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'), h('div', { class: 'muted' }, `${plural(store.repos.length, 'repository')} · ${rows.length - clean.length} need something · ${clean.length} clean`)),
         h('span', { class: 'spacer' }), btn('Fetch all', () => runBulk('fetch', store.repos.map((r) => r.id), {}, 'Fetch'), { iconName: 'fetch' })),
-      h('div', { class: 'tiles' }, cats.map((c) => h('button', { class: `tile ${open === c.key ? 'active' : ''} ${c.list.length ? '' : 'zero'}`, disabled: !c.list.length, onclick: () => { open = open === c.key ? null : c.key; draw(); } },
-        h('div', { class: 'tile-n' }, c.list.length), h('div', { class: 'tile-l' }, icon(c.icon, 'sm'), c.title)))),
-      shown.length ? shown.map((c) => h('div', { style: { marginBottom: '16px' } },
-        h('div', { class: 'section-title' }, h('h3', null, c.title), h('span', { class: 'badge' }, c.list.length)),
-        h('div', { class: 'panel' }, c.list.map((x) => h('div', { class: 'list-row', onclick: () => go(x) },
-          h('strong', { class: 'ellipsis', style: { width: '32%', flex: 'none' } }, x.r.label), h('span', { class: 'muted grow ellipsis' }, c.desc(x)),
-          h('span', { onclick: (e) => e.stopPropagation() }, c.action(x)))))))
-        : h('div', { class: 'empty' }, h('h3', null, 'Everything is clean'), h('div', null, 'No uncommitted, unpushed or unpulled work in any repository.')));
+      h('div', { class: 'tiles' }, [
+        [dirty.length, 'uncommitted', 'var(--warn)'], [unpushed.length, 'unpushed', 'var(--info)'], [behind.length, 'behind upstream', 'var(--warn)'],
+        [off.length, 'off default branch', 'var(--text)'], [stashes.length, 'with stashes', 'var(--text)'], [clean.length, 'clean', 'var(--ok)'],
+      ].map(([n, label, color]) => h('div', { class: 'tile', style: { cursor: 'default' } }, h('div', { class: 'tile-n', style: { color: n ? color : 'var(--faint)' } }, n), h('div', { class: 'muted' }, label)))),
+      h('div', { class: 'two' },
+        card('Uncommitted changes', h('span', { class: `badge ${dirty.length ? 'warn' : ''}` }, dirty.length ? `${plural(dirty.length, 'repository')} · ${plural(totalFiles, 'file')}` : '0'),
+          dirty.map((x) => line(x, [two([x.s.counts.staged ? `${x.s.counts.staged} staged` : null, x.s.counts.unstaged ? `${x.s.counts.unstaged} changed` : null, x.s.counts.untracked ? `${x.s.counts.untracked} new` : null, x.s.counts.conflicted ? `${x.s.counts.conflicted} conflicted` : null].filter(Boolean).join(' · '), x.s.branch || 'detached'),
+            h('span', { class: 'bars', title: 'staged / changed / new' }, h('i', { style: { flex: x.s.counts.staged, background: 'var(--ok)' } }), h('i', { style: { flex: x.s.counts.unstaged + x.s.counts.conflicted, background: 'var(--warn)' } }), h('i', { style: { flex: x.s.counts.untracked, background: 'var(--info)' } }))],
+          btn('Review', () => go(x), { cls: 'small' }))),
+          dirty.length ? 'Staged, changed and new files per repository.' : 'Every working tree is clean.'),
+        card('Unpushed and unpulled', h('span', { class: `badge ${unpushed.length ? 'info' : ''}` }, `${unpushed.length} to push · ${behind.length} to pull`),
+          [...unpushed.map((x) => line(x, two(`${plural(pushCount(x), 'commit')} to push`, x.s.upstream ? `to ${x.s.upstream}` : `${x.s.branch} is not published yet`),
+            btn(x.s.upstream ? `Push ${pushCount(x)}` : 'Publish', () => run('repo.push', x, 'Pushed'), { cls: 'small primary' }))),
+          ...behind.map((x) => line(x, two(`${plural(x.s.behind, 'commit')} to pull`, `from ${x.s.upstream}`),
+            btn(`Pull ${x.s.behind}`, () => run('repo.pull', x, 'Pulled'), { cls: 'small', disabled: !!x.s.dirty, title: x.s.dirty ? 'Commit or stash changes first' : '' })))],
+          'Pushing starts each repository’s workflows; they are followed on Actions.',
+          unpushed.length > 1 ? btn('Push all', () => runBulk('push', unpushed.map((x) => x.r.id), {}, 'Push'), { cls: 'small primary' }) : null),
+        card('Off the default branch', h('span', { class: 'badge' }, off.length),
+          off.map((x) => line(x, [h('span', { class: 'mono muted grow ellipsis' }, x.s.branch), x.s.behindDefault ? h('span', { class: 'badge warn' }, `${x.s.behindDefault} behind ${x.s.defaultBranch}`) : h('span', { class: 'badge ok' }, 'up to date')],
+            btn('Branches', () => go(x, 'branches'), { cls: 'small ghost' }))),
+          shared ? h('span', null, `${shared[1]} of these share ${shared[0]}. `, h('a', { onclick: () => navigate(`#/feature/${encodeURIComponent(shared[0])}`) }, 'Open it in Feature branches')) : 'Repositories working on something other than their default branch.'),
+        card('Stashes and blocked', h('span', { class: `badge ${blocked.length ? 'bad' : ''}` }, stashes.length + blocked.length),
+          [...blocked.map((x) => line(x, two([...(x.s.inProgress || []).map((o) => `${o} in progress`), x.s.locked ? 'index locked' : null, x.s.detached ? 'detached HEAD' : null, x.s.error ? 'cannot read status' : null].filter(Boolean).join(', '), 'needs your attention'), btn('Open', () => go(x), { cls: 'small primary' }))),
+          ...stashes.map((x) => line(x, two(plural(x.s.stash, 'stash'), 'saved work waiting to be applied or dropped'), btn('View', () => go(x, 'stashes'), { cls: 'small ghost' })))],
+          blocked.length ? 'Finish or abort operations in progress before switching tasks.' : 'Nothing is in the middle of a merge or rebase.')),
+      h('section', { class: 'panel' },
+        h('div', { class: 'panel-head' }, h('h3', { class: 'grow' }, 'Clean'), h('span', { class: 'badge ok' }, plural(clean.length, 'repository')), h('span', { class: 'faint' }, 'on the default branch, nothing to commit, push or pull')),
+        clean.length ? h('div', { class: 'clean-grid' }, clean.map((x) => h('div', { onclick: () => go(x), title: x.r.path }, h('span', { class: 'dot ok' }), h('strong', { class: 'grow ellipsis' }, x.r.label), h('span', { class: 'faint mono', style: { fontSize: '11px' } }, x.s.branch || ''))))
+          : h('div', { class: 'empty', style: { padding: '22px' } }, 'No repository is completely clean right now.')));
   }
   const un = subscribe('summary', debounce(draw, 300));
   draw();

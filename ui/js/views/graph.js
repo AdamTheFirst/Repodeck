@@ -359,7 +359,7 @@ export function render(view, r, sub) {
       { label: 'Apply', icon: 'check', action: () => act(() => rpc('stash.apply', { id: r.id, ref: s.ref }), { ok: 'Stash applied' }).then(reset) },
       { label: 'Pop (apply and drop)', icon: 'check', action: () => act(() => rpc('stash.apply', { id: r.id, ref: s.ref, pop: true }), { ok: 'Stash popped' }).then(reset) },
       { label: 'Create branch from stash…', icon: 'branch', action: async () => { const n = await prompt('Branch from stash', 'Branch name'); if (n) act(() => rpc('stash.branch', { id: r.id, ref: s.ref, name: n }), { ok: `Created ${n}` }).then(reset); } },
-      { label: 'Drop…', icon: 'trash', danger: true, action: async () => { if (await confirmDanger({ title: 'Drop stash?', message: `Delete ${s.ref} "${s.message}".`, recover: 'Not recoverable from git-helper (git fsck can sometimes find dropped stashes).', confirmLabel: 'Drop' })) act(() => rpc('stash.drop', { id: r.id, ref: s.ref }), { ok: 'Stash dropped' }).then(reset); } },
+      { label: 'Drop…', icon: 'trash', danger: true, action: async () => { if (await confirmDanger({ title: 'Drop stash?', message: `Delete ${s.ref} "${s.message}".`, recover: 'Not recoverable from Repodeck (git fsck can sometimes find dropped stashes).', confirmLabel: 'Drop' })) act(() => rpc('stash.drop', { id: r.id, ref: s.ref }), { ok: 'Stash dropped' }).then(reset); } },
     ];
   }
 

@@ -1,7 +1,7 @@
 <#
   Builds the release files into dist\:
-    git-helper.exe                  launcher (no console window)
-    git-helper-setup-<version>.exe  GUI installer with Install, Repair and Uninstall
+    Repodeck.exe                  launcher (no console window)
+    repodeck-setup-<version>.exe  GUI installer with Install, Repair and Uninstall
 
   Uses the C# compiler that ships with Windows (.NET Framework 4.x), so there is nothing to install
   to build, and the resulting exes run on a clean Windows 10/11.
@@ -16,16 +16,16 @@ if (-not (Test-Path $csc)) { $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framewo
 if (-not (Test-Path $csc)) { throw 'The .NET Framework C# compiler (csc.exe) was not found.' }
 
 $version = (Get-Content (Join-Path $root 'package.json') -Raw | ConvertFrom-Json).version
-$icon = Join-Path $root 'installer\git-helper.ico'
+$icon = Join-Path $root 'installer\repodeck.ico'
 $manifest = Join-Path $root 'installer\src\app.manifest'
 
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
-Write-Host "Building git-helper $version"
+Write-Host "Building Repodeck $version"
 
 # 1. launcher
-& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/out:$stage\git-helper.exe" /r:System.Windows.Forms.dll (Join-Path $root 'installer\src\Launcher.cs')
+& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/out:$stage\Repodeck.exe" /r:System.Windows.Forms.dll (Join-Path $root 'installer\src\Launcher.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
 
 # 2. payload
@@ -39,12 +39,12 @@ $zip = Join-Path $dist 'payload.zip'
 # 3. setup
 $buildInfo = Join-Path $dist 'BuildInfo.cs'
 Set-Content -Path $buildInfo -Encoding UTF8 -Value "static class BuildInfo { public const string Version = `"$version`"; }"
-$setup = Join-Path $dist "git-helper-setup-$version.exe"
+$setup = Join-Path $dist "repodeck-setup-$version.exe"
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/resource:$zip,payload.zip" "/out:$setup" `
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
   (Join-Path $root 'installer\src\Setup.cs') $buildInfo
 if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }
 
-Copy-Item (Join-Path $stage 'git-helper.exe') $dist
+Copy-Item (Join-Path $stage 'Repodeck.exe') $dist
 Remove-Item -Recurse -Force $stage, $zip, $buildInfo
 Get-ChildItem $dist | ForEach-Object { '{0,-36} {1,8:N0} KB' -f $_.Name, ($_.Length / 1KB) }

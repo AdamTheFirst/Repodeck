@@ -1,4 +1,4 @@
-# git-helper
+# Repodeck
 
 A small Windows app for people who work in many git repositories at once. It shows every repository under your folders in one tree with the ones that need attention highlighted, and gives you source control, a commit graph, pull requests and GitHub Actions status in one window. It is built for working from a terminal, without an IDE.
 
@@ -35,7 +35,7 @@ It runs locally: a tiny Node.js server on `127.0.0.1` drives the `git` and `gh` 
 
 **GitHub Actions**
 - **Actions board:** the latest run on the default branch of every repository, grouped into failing, running and passing. It uses one GitHub request per account, however many repositories you have.
-- **Tracked runs:** every push, sync or pull request merge you make in git-helper is followed until its workflows finish, and you get a Windows notification with a link to the failure.
+- **Tracked runs:** every push, sync or pull request merge you make in Repodeck is followed until its workflows finish, and you get a Windows notification with a link to the failure.
 - New commits pushed to a default branch from elsewhere are tracked too (optional).
 - Run detail shows jobs, steps, and the log with the error lines first.
 - Re-run all or only failed jobs, cancel, start a workflow manually with its inputs, and see deployment environments.
@@ -49,13 +49,13 @@ It runs locally: a tiny Node.js server on `127.0.0.1` drives the `git` and `gh` 
 
 ## Install
 
-Download `git-helper-setup-<version>.exe` from the Releases page and run it. Setup is a small window with three actions:
+Download `repodeck-setup-<version>.exe` from the Releases page and run it. Setup is a small window with three actions:
 
-- **Install**: copies git-helper to `%LOCALAPPDATA%\Programs\git-helper`, adds Start menu and desktop shortcuts and an entry in Installed apps. It installs for you only and never asks for administrator rights.
+- **Install**: copies Repodeck to `%LOCALAPPDATA%\Programs\Repodeck`, adds Start menu and desktop shortcuts and an entry in Installed apps. It installs for you only and never asks for administrator rights.
 - **Repair** (or **Update** when Setup is newer): replaces the program files, recreates shortcuts and installs any missing tool. Your settings are kept.
 - **Uninstall**: removes the program, shortcuts and the Installed apps entry. Settings are kept unless you tick the box. Git, GitHub CLI and Node.js stay installed.
 
-**Required tools.** Setup shows whether Git, GitHub CLI and Node.js are present. Anything missing is downloaded and installed with `winget` (package ids `Git.Git`, `GitHub.cli`, `OpenJS.NodeJS.LTS`) if you leave the box ticked. If winget itself is missing, git-helper is still installed and Setup tells you what to install; run Repair afterwards. You sign in to GitHub inside the app, not during setup.
+**Required tools.** Setup shows whether Git, GitHub CLI and Node.js are present. Anything missing is downloaded and installed with `winget` (package ids `Git.Git`, `GitHub.cli`, `OpenJS.NodeJS.LTS`) if you leave the box ticked. If winget itself is missing, Repodeck is still installed and Setup tells you what to install; run Repair afterwards. You sign in to GitHub inside the app, not during setup.
 
 Setup is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" the first time: choose More info, then Run anyway.
 
@@ -96,9 +96,9 @@ Choose the folders that contain your repositories. Then open **Settings → Diag
 
 ## Several GitHub accounts and SSH host aliases
 
-Remotes such as `git@github.com-work:owner/repo.git` use a host alias from your SSH config, which the GitHub CLI cannot map to a repository by itself. git-helper reads the owner and repository name from the remote URL and passes them to `gh` explicitly, so aliases work.
+Remotes such as `git@github.com-work:owner/repo.git` use a host alias from your SSH config, which the GitHub CLI cannot map to a repository by itself. Repodeck reads the owner and repository name from the remote URL and passes them to `gh` explicitly, so aliases work.
 
-**Accounts are separate workspaces.** Each signed-in GitHub account has its own folders, repositories, Actions board and pull requests. Switch from the account button at the top right; nothing from one account shows up in another, and GitHub is only ever contacted as the open account. Switching inside git-helper does not change which account `gh` uses in your terminal unless you choose that explicitly. The **GitHub** page lists every remote repository of the open account and shows which ones are cloned.
+**Accounts are separate workspaces.** Each signed-in GitHub account has its own folders, repositories, Actions board and pull requests. Switch from the account button at the top right; nothing from one account shows up in another, and GitHub is only ever contacted as the open account. Switching inside Repodeck does not change which account `gh` uses in your terminal unless you choose that explicitly. The **GitHub** page lists every remote repository of the open account and shows which ones are cloned.
 
 ## Safety
 
@@ -110,10 +110,10 @@ Remotes such as `git@github.com-work:owner/repo.git` use a host alias from your 
 ## Troubleshooting
 
 - **"… cannot see this repository"**: the repository belongs to another account. Switch accounts from the button at the top right, and add the folder to that account.
-- **Push or fetch times out**: git-helper cannot type passwords or SSH passphrases. Use Git Credential Manager (installed with Git for Windows) for HTTPS, or load your key into ssh-agent.
+- **Push or fetch times out**: Repodeck cannot type passwords or SSH passphrases. Use Git Credential Manager (installed with Git for Windows) for HTTPS, or load your key into ssh-agent.
 - **"The index is locked"**: another git program is running in that repository, or one crashed. If none is running, delete `.git\index.lock`.
 - **Notifications do not appear**: allow notifications for "Windows PowerShell" in Windows Settings → System → Notifications.
-- Logs are in `%LOCALAPPDATA%\git-helper\logs`.
+- Logs are in `%LOCALAPPDATA%\Repodeck\logs`.
 
 ## Development
 
@@ -121,7 +121,7 @@ Remotes such as `git@github.com-work:owner/repo.git` use a host alias from your 
 npm test                 # unit and integration tests (throwaway repositories in %TEMP%)
 npm run playground       # starts the app against a generated set of test repositories
 node scripts/make-icon.js
-powershell -File scripts\build.ps1   # git-helper.exe and the Setup exe, into dist\
+powershell -File scripts\build.ps1   # Repodeck.exe and the Setup exe, into dist\
 ```
 
 No build step and no npm dependencies.

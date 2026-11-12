@@ -14,7 +14,7 @@ export function render(main) {
     const list = entries.filter((e) => (!onlyFailed || !e.ok) && (!repo || e.repo === repo) && (!text || e.command.toLowerCase().includes(text.toLowerCase()))).slice().reverse();
     const repos = [...new Set(entries.map((e) => e.repo).filter(Boolean))].sort();
     mount(page,
-      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Activity'), h('div', { class: 'muted' }, 'Every git and GitHub CLI command git-helper ran, newest first. Background status checks are not listed.'))),
+      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Activity'), h('div', { class: 'muted' }, 'Every git and GitHub CLI command Repodeck ran, newest first. Background status checks are not listed.'))),
       h('div', { class: 'row', style: { marginBottom: '12px' } },
         h('input', { type: 'search', placeholder: 'Filter commands', value: text, oninput: (e) => { text = e.target.value; draw(); } }),
         h('select', { onchange: (e) => { repo = e.target.value; draw(); } }, h('option', { value: '' }, 'All repositories'), repos.map((r) => h('option', { value: r, selected: r === repo }, r))),

@@ -46,7 +46,7 @@ export function render(main) {
     const searchIn = h('input', { type: 'search', placeholder: 'Filter repositories', value: text, style: { width: '200px' }, oninput: (e) => { text = e.target.value; draw(); const el = page.querySelector('input[type=search]'); if (el) { el.focus(); el.setSelectionRange(text.length, text.length); } } });
     mount(page,
       h('div', { class: 'row', style: { marginBottom: '14px' } },
-        h('div', { class: 'page-head', style: { margin: 0 } }, h('div', null, h('h1', null, 'Actions board'), h('div', { class: 'muted' }, store.boardAt ? `Latest run on each default branch · updated ${ago(store.boardAt)}` : 'Loading…'))),
+        h('div', { class: 'page-head', style: { margin: 0 } }, h('div', null, h('h1', null, 'Actions'), h('div', { class: 'muted' }, store.boardAt ? `Latest run on each default branch · updated ${ago(store.boardAt)}` : 'Loading…'))),
         h('span', { class: 'spacer' }),
         h('div', { class: 'pill-tabs' }, [['all', `All (${entries.length})`], ['attention', `Needs attention (${counts.failure + counts.running})`], ['failure', `Failing (${counts.failure})`], ['running', `Running (${counts.running})`]]
           .map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => { filter = k; prefs.set('boardFilter', k); draw(); } }, l))),
@@ -54,6 +54,9 @@ export function render(main) {
         h('select', { title: 'Sort', onchange: (e) => { sort = e.target.value; prefs.set('boardSort', sort); draw(); } },
           [['name', 'Sort by name'], ['recent', 'Most recent commit first']].map(([v, l]) => h('option', { value: v, selected: sort === v }, l))),
         btn(refreshing ? 'Refreshing…' : 'Refresh', async () => { refreshing = true; draw(); await act(() => rpc('board.refresh')); await rpc('trackers.refresh').catch(() => {}); refreshing = false; draw(); }, { cls: 'small', iconName: 'refresh', disabled: refreshing })),
+
+      h('div', { class: 'tiles' }, [[counts.failure, 'failing', 'var(--bad)'], [counts.running, 'running', 'var(--warn)'], [counts.success, 'passing', 'var(--ok)'], [counts.none + counts.other, 'no runs', 'var(--text)']]
+        .map(([n, label, color]) => h('div', { class: 'tile', style: { cursor: 'default' } }, h('div', { class: 'tile-n', style: { color: n ? color : 'var(--faint)' } }, n), h('div', { class: 'muted' }, label)))),
 
       h('div', { class: 'section-title' }, h('h3', null, 'Tracked runs'), h('span', { class: 'faint' }, 'Your pushes and merges, followed until their workflows finish'),
         h('span', { class: 'spacer' }), doneT.length ? btn('Clear finished', () => act(() => rpc('trackers.clearDone')), { cls: 'small ghost' }) : null),

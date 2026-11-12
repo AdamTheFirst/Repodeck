@@ -93,7 +93,7 @@ async function signOut(login) {
   const a = info.accounts.find((x) => x.login === login);
   const ok = await confirmDanger({
     title: `Sign out ${login}?`,
-    message: `git-helper and the gh command in your terminal will stop using ${login}.${a && a.folders ? ` Its ${plural(a.folders, 'folder')} stay assigned to it and come back when you sign in again.` : ''} Nothing on disk is deleted.`,
+    message: `Repodeck and the gh command in your terminal will stop using ${login}.${a && a.folders ? ` Its ${plural(a.folders, 'folder')} stay assigned to it and come back when you sign in again.` : ''} Nothing on disk is deleted.`,
     confirmLabel: 'Sign out',
   });
   if (!ok) return;
@@ -157,7 +157,7 @@ export async function editIdentity() {
     accs.map((a, i) => [i ? ', ' : '', h('a', { onclick: async (e) => { e.preventDefault(); const v = await rpc('account.noreply', { login: a.login }).catch((err) => { banner({ level: 'error', title: err.message }); return null; }); if (v) input.value = v; } }, a.login)]), '.') : null);
   const v = await form({
     title: 'Commit identity',
-    intro: h('div', { class: 'muted' }, 'Stored in your global git config and used for every commit, in git-helper and in the terminal.'),
+    intro: h('div', { class: 'muted' }, 'Stored in your global git config and used for every commit, in Repodeck and in the terminal.'),
     fields: [{ name: 'name', label: 'Name', value: cur.name, required: true }, { name: 'email', label: 'Email', value: cur.email, required: true, extra: noreplyLinks }],
     submit: 'Save',
   });

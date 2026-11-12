@@ -4,7 +4,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
-process.env.GIT_HELPER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-data-'));
+process.env.REPODECK_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-data-'));
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

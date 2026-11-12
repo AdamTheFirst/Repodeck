@@ -3,8 +3,22 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 
-const base = process.env.GIT_HELPER_DATA
-  || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share'), 'git-helper');
+const base = process.env.REPODECK_DATA
+  || path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), '.local', 'share'), 'Repodeck');
+
+// The app was first released under another name: adopt its settings folder once.
+if (!process.env.REPODECK_DATA && !fs.existsSync(base)) {
+  const legacy = path.join(path.dirname(base), 'git' + '-helper');
+  if (fs.existsSync(path.join(legacy, 'config.json'))) {
+    try {
+      fs.mkdirSync(base, { recursive: true });
+      for (const n of fs.readdirSync(legacy)) {
+        if (/^(instance|edge-profile|logs|neutral)/.test(n) || n.endsWith('.log')) continue;
+        fs.cpSync(path.join(legacy, n), path.join(base, n), { recursive: true });
+      }
+    } catch { /* start fresh if the old folder cannot be read */ }
+  }
+}
 
 const paths = {
   data: base,

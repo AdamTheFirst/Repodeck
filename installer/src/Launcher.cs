@@ -1,4 +1,4 @@
-// git-helper.exe: starts the app without a console window (or brings up the running copy).
+// Repodeck.exe: starts the app without a console window (or brings up the running copy).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,14 +14,14 @@ static class Launcher
         string main = Path.Combine(root, "server", "main.js");
         if (!File.Exists(main))
         {
-            MessageBox.Show("git-helper is not installed correctly: server\\main.js is missing next to git-helper.exe.\n\nRun Setup and choose Repair.", "git-helper", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("Repodeck is not installed correctly: server\\main.js is missing next to Repodeck.exe.\n\nRun Setup and choose Repair.", "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
         string path = FreshPath();
         string node = FindNode(path);
         if (node == null)
         {
-            MessageBox.Show("Node.js was not found.\n\nRun git-helper Setup and choose Repair to install it, or install Node.js 20 or newer yourself.", "git-helper", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show("Node.js was not found.\n\nRun Repodeck Setup and choose Repair to install it, or install Node.js 20 or newer yourself.", "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return 1;
         }
         try
@@ -36,7 +36,7 @@ static class Launcher
         }
         catch (Exception e)
         {
-            MessageBox.Show("Could not start git-helper:\n" + e.Message, "git-helper", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show("Could not start Repodeck:\n" + e.Message, "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }

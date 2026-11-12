@@ -55,14 +55,14 @@ async function main() {
     if (other) { await handOver(other); process.exit(0); }
   }
   instances.register(account, port, token);
-  log.info(`git-helper listening on 127.0.0.1:${port} for ${account || 'no account'}`);
+  log.info(`Repodeck listening on 127.0.0.1:${port} for ${account || 'no account'}`);
   state.start();
 
   // If nobody connects within two minutes (window failed to open), stop rather than linger.
   setTimeout(() => { if (!everConnected && !config.get().keepRunningWhenClosed && !noOpen) shutdown(0); }, 120_000);
 
   if (!noOpen) win.open();
-  if (process.env.GIT_HELPER_PRINT_URL) process.stdout.write(`${win.ctx.url}\n`);
+  if (process.env.REPODECK_PRINT_URL) process.stdout.write(`${win.ctx.url}\n`);
 
   function shutdown(code) {
     instances.unregister();

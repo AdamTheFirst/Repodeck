@@ -26,7 +26,7 @@ export function render(view, r) {
         h('div', { class: 'grow' }, h('div', { class: 'ellipsis' }, s.message), h('div', { class: 'sub' }, `${s.ref} · ${ago(s.time)}${s.hasUntracked ? ' · includes untracked files' : ''}`))))
         : h('div', { class: 'empty' }, 'No stashes.'),
       stashes.length > 1 ? h('div', { style: { padding: '10px' } }, btn('Clear all stashes…', async () => {
-        if (await confirmDanger({ title: 'Delete every stash?', message: `All ${stashes.length} stashes will be deleted:`, items: stashes.map((s) => `${s.ref}: ${s.message}`), recover: 'Not recoverable from git-helper.', confirmLabel: 'Clear all' })) act(() => rpc('stash.clear', { id: r.id }), { ok: 'Stashes cleared' }).then(load);
+        if (await confirmDanger({ title: 'Delete every stash?', message: `All ${stashes.length} stashes will be deleted:`, items: stashes.map((s) => `${s.ref}: ${s.message}`), recover: 'Not recoverable from Repodeck.', confirmLabel: 'Clear all' })) act(() => rpc('stash.clear', { id: r.id }), { ok: 'Stashes cleared' }).then(load);
       }, { cls: 'small danger' })) : null);
     if (!selected) { mount(filesEl, h('div', { class: 'empty' }, stashes.length ? 'Select a stash to see its changes.' : '')); diff.set({ files: [] }); }
   }
@@ -38,7 +38,7 @@ export function render(view, r) {
       btn('Pop', () => apply(s, true), { cls: 'small primary', title: 'Apply, then delete the stash if it applied cleanly' }),
       btn('Branch…', async () => { const n = await prompt('Create branch from stash', 'Branch name'); if (n) act(() => rpc('stash.branch', { id: r.id, ref: s.ref, name: n }), { ok: `Created ${n} with the stashed changes` }).then(load); }, { cls: 'small' }),
       btn('Drop…', async () => {
-        if (await confirmDanger({ title: 'Drop stash?', message: `Delete ${s.ref} "${s.message}".`, recover: 'Not recoverable from git-helper.', confirmLabel: 'Drop' })) act(() => rpc('stash.drop', { id: r.id, ref: s.ref }), { ok: 'Stash dropped' }).then(() => { selected = null; load(); });
+        if (await confirmDanger({ title: 'Drop stash?', message: `Delete ${s.ref} "${s.message}".`, recover: 'Not recoverable from Repodeck.', confirmLabel: 'Drop' })) act(() => rpc('stash.drop', { id: r.id, ref: s.ref }), { ok: 'Stash dropped' }).then(() => { selected = null; load(); });
       }, { cls: 'small danger' }));
     mount(filesEl, actions, h('div', { class: 'skeleton' }, 'Loading…'));
     try {

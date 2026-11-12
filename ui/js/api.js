@@ -21,7 +21,7 @@ export async function rpc(method, params = {}) {
     try {
       res = await fetch('/api/rpc', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': token }, body: JSON.stringify({ method, params }) });
     } catch {
-      throw new ApiError({ error: 'Cannot reach the git-helper server. It may have stopped; start git-helper again.' });
+      throw new ApiError({ error: 'Cannot reach the Repodeck server. It may have stopped; start Repodeck again.' });
     }
     if (res.status === 401 && !sessionStorage.getItem('gh.reloaded')) {
       // The server restarted and issued a new session token: reload once to pick it up.

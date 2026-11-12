@@ -278,6 +278,17 @@ function detail(view, r, number) {
     mount(fileList, pr.files.map((f) => h('div', { class: 'file-row', onclick: () => { const el = [...diff.el.querySelectorAll('.file-banner')].find((b) => b.textContent.includes(f.path)); if (el) el.scrollIntoView({ block: 'start' }); } },
       h('input', { type: 'checkbox', checked: threads.viewed[f.path] === 'VIEWED', title: 'Viewed', onclick: (e) => e.stopPropagation(), onchange: (e) => setViewed(f.path, e.target.checked) }),
       h('span', { class: 'name', title: f.path }, f.path), h('span', { class: 'faint', style: { fontSize: '11px' } }, h('span', { style: { color: 'var(--ok)' } }, `+${f.additions}`), ' ', h('span', { style: { color: 'var(--bad)' } }, `−${f.deletions}`)))));
+    {
+      const approvals = (pr.latestReviews || []).filter((x) => x.state === 'APPROVED').length;
+      const changes = (pr.latestReviews || []).filter((x) => x.state === 'CHANGES_REQUESTED').length;
+      const item = (cls, text, action) => h('div', { class: 'row' }, h('span', { class: `dot ${cls}` }), h('span', { class: 'grow' }, text), action || null);
+      const goChecks = h('a', { onclick: () => { tab = 'checks'; renderTabs(); renderBody(); } }, 'Why?');
+      fileList.append(h('div', { style: { margin: '14px 14px 0', paddingTop: '14px', borderTop: '1px solid var(--border)' }, class: 'col' },
+        h('span', { class: 'eyebrow' }, 'Merge readiness'),
+        changes ? item('bad', `${changes} change request(s)`) : approvals ? item('ok', `${approvals} approval(s)`) : item('', 'No review yet'),
+        pr.checksState === 'failure' ? item('bad', 'Checks failing', goChecks) : pr.checksState === 'pending' ? item('run', 'Checks running') : pr.checksState === 'success' ? item('ok', 'Checks passing') : item('', 'No checks'),
+        pr.mergeable === 'CONFLICTING' ? item('bad', `Conflicts with ${pr.baseRefName}`) : pr.mergeStateStatus === 'BEHIND' ? item('warn', `Behind ${pr.baseRefName}`, h('a', { onclick: () => act(() => rpc('pr.updateBranch', { id: r.id, number }), { ok: 'Update requested' }).then(() => load()) }, 'Update')) : item('ok', `Up to date with ${pr.baseRefName}`)));
+    }
     async function loadDiff(full) {
       try { diff.set(await rpc('pr.diff', { id: r.id, number, full })); } catch (e) { banner({ level: 'error', title: 'Could not load the diff', body: e.message }); }
     }

@@ -1,6 +1,6 @@
 {
-  "name": "git-helper",
-  "version": "0.1.0",
+  "name": "repodeck",
+  "version": "0.2.0",
   "description": "A lightweight local app for many git repositories: source control, commit graph, pull requests and GitHub Actions status in one window.",
   "private": true,
   "license": "MIT",

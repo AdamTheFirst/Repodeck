@@ -34,7 +34,7 @@ function open() {
 /** The title the page sets, so the window can be found again. */
 function title() {
   const a = config.get().currentAccount;
-  return a ? `git-helper · ${a}` : 'git-helper';
+  return a ? `Repodeck · ${a}` : 'Repodeck';
 }
 
 /** Bring this process's window forward; open one if it has none. Never opens a second. */

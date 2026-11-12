@@ -43,7 +43,7 @@ function renderTopbar() {
   const activeTrackers = store.trackers.filter((t) => t.state === 'waiting' || t.state === 'running').length;
   const reviews = store.myprs ? store.myprs.review.length : 0;
   mount(tb,
-    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), 'git-helper'),
+    h('div', { class: 'brand' }, h('img', { src: '/icon.svg', alt: '' }), 'Repodeck'),
     NAV.map(([k, label, ic, go]) => h('button', { class: `navbtn ${store.view === k ? 'active' : ''}`, onclick: go, title: label }, icon(ic), label)),
     h('span', { class: 'spacer' }),
     reviews ? h('span', { class: 'indicator', title: 'Pull requests waiting for your review', onclick: (e) => reviewMenu(e.currentTarget) }, icon('eye', 'sm'), `${reviews} review${reviews === 1 ? '' : 's'}`) : null,
@@ -155,7 +155,7 @@ function singleWindow() {
   });
 }
 
-function applyTitle() { const a = store.config && store.config.currentAccount; document.title = a ? `git-helper · ${a}` : 'git-helper'; }
+function applyTitle() { const a = store.config && store.config.currentAccount; document.title = a ? `Repodeck · ${a}` : 'Repodeck'; }
 
 async function boot() {
   await singleWindow();
@@ -163,7 +163,7 @@ async function boot() {
     await loadAccounts(); // also makes the server pick the open account, so settings below are that account's
     store.config = await rpc('config.get');
   } catch (e) {
-    mount(main, h('div', { class: 'empty' }, h('h3', null, 'Cannot reach git-helper'), h('div', null, e.message)));
+    mount(main, h('div', { class: 'empty' }, h('h3', null, 'Cannot reach Repodeck'), h('div', null, e.message)));
     splash(null);
     return;
   }
@@ -201,7 +201,7 @@ async function boot() {
   connect();
   rpc('app.diagnostics').then((d) => {
     const missing = [['Git', d.git], ['GitHub CLI', d.gh]].filter(([, v]) => /not available/.test(v)).map(([n]) => n);
-    if (missing.length) banner({ level: 'error', title: `${missing.join(' and ')} not found`, body: `git-helper needs ${missing.join(' and ')}. Run git-helper Setup and choose Repair to install ${missing.length > 1 ? 'them' : 'it'}.${missing.includes('Git') ? '' : ' Local git features still work.'}`, timeout: 0 });
+    if (missing.length) banner({ level: 'error', title: `${missing.join(' and ')} not found`, body: `Repodeck needs ${missing.join(' and ')}. Run Repodeck Setup and choose Repair to install ${missing.length > 1 ? 'them' : 'it'}.${missing.includes('Git') ? '' : ' Local git features still work.'}`, timeout: 0 });
   }).catch(() => {});
 
   // refresh on focus (cheap: one status call per repo, done server-side in parallel)

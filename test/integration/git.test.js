@@ -3,7 +3,7 @@
 const os = require('node:os');
 const path = require('node:path');
 const fs = require('node:fs');
-process.env.GIT_HELPER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-data-'));
+process.env.REPODECK_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-data-'));
 Object.assign(process.env, {
   GIT_AUTHOR_NAME: 'Test User', GIT_AUTHOR_EMAIL: 'test@example.com', GIT_COMMITTER_NAME: 'Test User', GIT_COMMITTER_EMAIL: 'test@example.com',
 });

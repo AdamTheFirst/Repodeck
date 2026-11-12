@@ -1,4 +1,4 @@
-// git-helper Setup: install, repair and uninstall for the current user. No administrator rights.
+// Repodeck Setup: install, repair and uninstall for the current user. No administrator rights.
 // Built with the C# compiler that ships with Windows (.NET Framework 4.x), so it runs on a clean machine.
 using System;
 using System.Collections.Generic;
@@ -24,12 +24,12 @@ class Tool
 
 class SetupForm : Form
 {
-    const string AppName = "git-helper";
-    const string RegKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\git-helper";
+    const string AppName = "Repodeck";
+    const string RegKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Repodeck";
 
     readonly string installDir;
     // Same override the app itself honours, so tests never touch the real settings or a running copy.
-    readonly string dataDir = Environment.GetEnvironmentVariable("GIT_HELPER_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "git-helper");
+    readonly string dataDir = Environment.GetEnvironmentVariable("REPODECK_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Repodeck");
     readonly List<Tool> tools = new List<Tool>();
     readonly bool silent;
     readonly string silentAction;
@@ -51,7 +51,7 @@ class SetupForm : Form
     {
         this.silent = silent;
         this.silentAction = action;
-        installDir = DirOverride ?? ExistingInstallDir() ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "git-helper");
+        installDir = DirOverride ?? ExistingInstallDir() ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Repodeck");
         tools.Add(new Tool { Name = "Git", Exe = "git", Args = "--version", Pattern = @"(\d+\.\d+\.\d+)", Min = new Version(2, 30, 0), WingetId = "Git.Git" });
         tools.Add(new Tool { Name = "GitHub CLI", Exe = "gh", Args = "--version", Pattern = @"(\d+\.\d+\.\d+)", Min = new Version(2, 40, 0), WingetId = "GitHub.cli" });
         tools.Add(new Tool { Name = "Node.js", Exe = "node", Args = "--version", Pattern = @"v(\d+\.\d+\.\d+)", Min = new Version(20, 0, 0), WingetId = "OpenJS.NodeJS.LTS" });
@@ -78,9 +78,9 @@ class SetupForm : Form
         BackColor = Color.White;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-        var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Color.FromArgb(47, 111, 94) };
+        var header = new Panel { Dock = DockStyle.Top, Height = 84, BackColor = Color.FromArgb(20, 56, 47) };
         title = new Label { Text = AppName, ForeColor = Color.White, Font = new Font("Segoe UI Semibold", 17f), AutoSize = true, Location = new Point(22, 14) };
-        subtitle = new Label { Text = "Version " + BuildInfo.Version, ForeColor = Color.FromArgb(215, 235, 228), AutoSize = true, Location = new Point(24, 50) };
+        subtitle = new Label { Text = "Version " + BuildInfo.Version, ForeColor = Color.FromArgb(150, 214, 196), AutoSize = true, Location = new Point(24, 50) };
         header.Controls.Add(title); header.Controls.Add(subtitle);
         Controls.Add(header);
 
@@ -94,14 +94,14 @@ class SetupForm : Form
 
         chkTools = new CheckBox { Text = "Download and install missing tools with winget (official source)", Location = new Point(22, 242), AutoSize = true, Checked = true };
         chkDesktop = new CheckBox { Text = "Create a desktop shortcut", Location = new Point(22, 266), AutoSize = true, Checked = false };
-        chkLaunch = new CheckBox { Text = "Start git-helper when finished", Location = new Point(22, 290), AutoSize = true, Checked = false, Visible = false }; // the finish screen has an Open button instead
+        chkLaunch = new CheckBox { Text = "Start Repodeck when finished", Location = new Point(22, 290), AutoSize = true, Checked = false, Visible = false }; // the finish screen has an Open button instead
         chkData = new CheckBox { Text = "Also delete my settings, logs and safety copies of discarded changes", Location = new Point(22, 266), AutoSize = true, Visible = false };
         Controls.Add(chkTools); Controls.Add(chkDesktop); Controls.Add(chkLaunch); Controls.Add(chkData);
 
         log = new TextBox { Location = new Point(22, 320), Size = new Size(556, 118), Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Color.FromArgb(247, 247, 245), BorderStyle = BorderStyle.FixedSingle, Font = new Font("Consolas", 8.5f) };
         log.Visible = false;
         Controls.Add(log);
-        hint = new Label { Location = new Point(22, 330), Size = new Size(556, 100), ForeColor = Color.DimGray, Text = "Setup copies git-helper into your user profile and adds a Start menu entry.\nNothing is installed for other users and no administrator rights are needed.\n\nYou sign in to GitHub later, inside the app." };
+        hint = new Label { Location = new Point(22, 330), Size = new Size(556, 100), ForeColor = Color.DimGray, Text = "Setup copies Repodeck into your user profile and adds a Start menu entry.\nNothing is installed for other users and no administrator rights are needed.\n\nYou sign in to GitHub later, inside the app." };
         Controls.Add(hint);
         progress = new ProgressBar { Location = new Point(22, 444), Size = new Size(556, 6), Style = ProgressBarStyle.Marquee, MarqueeAnimationSpeed = 25, Visible = false };
         Controls.Add(progress);
@@ -143,7 +143,7 @@ class SetupForm : Form
     void ShowUninstallChoice()
     {
         uninstallMode = true;
-        status.Text = "Remove git-helper " + installedVersion + " from this computer?\nYour repositories are not touched. Git, GitHub CLI and Node.js stay installed.";
+        status.Text = "Remove Repodeck " + installedVersion + " from this computer?\nYour repositories are not touched. Git, GitHub CLI and Node.js stay installed.";
         chkTools.Visible = chkDesktop.Visible = chkLaunch.Visible = false;
         chkData.Visible = true;
         toolsTitle.Visible = toolsPanel.Visible = false;
@@ -192,7 +192,7 @@ class SetupForm : Form
         if (installed)
         {
             bool same = installedVersion == BuildInfo.Version;
-            status.Text = "git-helper " + installedVersion + " is installed in\n" + installDir;
+            status.Text = "Repodeck " + installedVersion + " is installed in\n" + installDir;
             btnRepair.Text = same ? "Repair" : "Update to " + BuildInfo.Version;
             LayoutButtons(btnRepair, btnUninstall, btnClose);
         }
@@ -254,7 +254,7 @@ class SetupForm : Form
         }
         if (action == "uninstall")
         {
-            status.Text = "git-helper was removed.\nGit, GitHub CLI and Node.js are still installed.";
+            status.Text = "Repodeck was removed.\nGit, GitHub CLI and Node.js are still installed.";
             chkTools.Visible = chkDesktop.Visible = chkLaunch.Visible = false;
             LayoutButtons(btnClose);
             return;
@@ -263,26 +263,27 @@ class SetupForm : Form
         RefreshState();
         // Make the result unmistakable, and never start the app unless the user asks.
         title.Text = toolsMissing ? "Installed, with warnings" : (action == "repair" ? "Repair complete" : "Installation complete");
-        subtitle.Text = toolsMissing ? "Some required tools are still missing" : "git-helper " + BuildInfo.Version + " is ready to use";
+        subtitle.Text = toolsMissing ? "Some required tools are still missing" : "Repodeck " + BuildInfo.Version + " is ready to use";
         status.Font = new Font("Segoe UI Semibold", 10f);
         status.ForeColor = toolsMissing ? Color.FromArgb(154, 97, 0) : Color.FromArgb(31, 122, 67);
-        status.Text = toolsMissing ? "git-helper is installed, but it cannot run until the tools marked below are installed.\nInstall them, then run Setup again and choose Repair." : "✔  git-helper is installed. You will find it in the Start menu.\nNothing was opened: use the button below when you want to start it.";
+        status.Text = toolsMissing ? "Repodeck is installed, but it cannot run until the tools marked below are installed.\nInstall them, then run Setup again and choose Repair." : "✔  Repodeck is installed. You will find it in the Start menu.\nNothing was opened: use the button below when you want to start it.";
         chkTools.Visible = chkDesktop.Visible = false;
-        if (openBtn == null) { openBtn = MakeButton("Open git-helper", 0, true); openBtn.Size = new Size(140, 32); openBtn.Click += delegate { StartApp(); Close(); }; }
+        if (openBtn == null) { openBtn = MakeButton("Open Repodeck", 0, true); openBtn.Size = new Size(140, 32); openBtn.Click += delegate { StartApp(); Close(); }; }
         if (toolsMissing) LayoutButtons(btnClose); else LayoutButtons(openBtn, btnClose);
     }
 
     void StartApp()
     {
-        try { Process.Start(new ProcessStartInfo(Path.Combine(installDir, "git-helper.exe")) { WorkingDirectory = installDir, UseShellExecute = false }); } catch (Exception e) { Log("Could not start git-helper: " + e.Message); }
+        try { Process.Start(new ProcessStartInfo(Path.Combine(installDir, "Repodeck.exe")) { WorkingDirectory = installDir, UseShellExecute = false }); } catch (Exception e) { Log("Could not start Repodeck: " + e.Message); }
     }
 
     // ------------------------------------------------------------------ install / repair
     /// <returns>true when every required tool is present afterwards</returns>
     bool Install(bool installTools, bool desktop, bool repair)
     {
-        Log((repair ? "Repairing" : "Installing") + " git-helper " + BuildInfo.Version + " in " + installDir);
+        Log((repair ? "Repairing" : "Installing") + " Repodeck " + BuildInfo.Version + " in " + installDir);
         StopRunningApp();
+        RemoveLegacy();
 
         bool allOk = true;
         foreach (var t in tools)
@@ -315,11 +316,11 @@ class SetupForm : Form
         string setupCopy = Path.Combine(installDir, "Setup.exe");
         if (!string.Equals(Path.GetFullPath(self), Path.GetFullPath(setupCopy), StringComparison.OrdinalIgnoreCase)) File.Copy(self, setupCopy, true);
 
-        string exe = Path.Combine(installDir, "git-helper.exe");
+        string exe = Path.Combine(installDir, "Repodeck.exe");
         if (Portable) { Log("Portable install: no shortcuts and no Apps entry. Start it with " + exe); return allOk; }
         Log("Creating shortcuts...");
-        CreateShortcut(Path.Combine(StartMenuDir(), "git-helper.lnk"), exe);
-        string desk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "git-helper.lnk");
+        CreateShortcut(Path.Combine(StartMenuDir(), "Repodeck.lnk"), exe);
+        string desk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Repodeck.lnk");
         if (desktop) CreateShortcut(desk, exe);
 
         using (var k = Registry.CurrentUser.CreateSubKey(RegKey))
@@ -335,7 +336,7 @@ class SetupForm : Form
             k.SetValue("NoRepair", 1, RegistryValueKind.DWord);
             k.SetValue("EstimatedSize", (int)(DirSize(installDir) / 1024), RegistryValueKind.DWord);
         }
-        Log(allOk ? "Done." : "Done, but some required tools are missing. git-helper will tell you which when it starts.");
+        Log(allOk ? "Done." : "Done, but some required tools are missing. Repodeck will tell you which when it starts.");
         return allOk;
     }
 
@@ -361,9 +362,9 @@ class SetupForm : Form
     // ------------------------------------------------------------------ uninstall
     void Uninstall(bool wipeData)
     {
-        Log("Removing git-helper from " + installDir);
+        Log("Removing Repodeck from " + installDir);
         StopRunningApp();
-        foreach (var lnk in Portable ? new string[0] : new[] { Path.Combine(StartMenuDir(), "git-helper.lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "git-helper.lnk") })
+        foreach (var lnk in Portable ? new string[0] : new[] { Path.Combine(StartMenuDir(), "Repodeck.lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "Repodeck.lnk") })
         {
             try { if (File.Exists(lnk)) { File.Delete(lnk); Log("Removed " + lnk); } } catch (Exception e) { Log("Could not remove " + lnk + ": " + e.Message); }
         }
@@ -425,26 +426,56 @@ class SetupForm : Form
     }
     static string StartMenuDir() { return Environment.GetFolderPath(Environment.SpecialFolder.Programs); }
 
+    static string LegacyName { get { return "git" + "-helper"; } }
+    static string LegacyDataDir() { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), LegacyName); }
+
+    /// Ask every running window (one per account) to quit, including ones of the previous product name.
     void StopRunningApp()
     {
+        foreach (var dir in new[] { dataDir, LegacyDataDir() })
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var inst in Directory.GetFiles(dir, "instance*.json"))
+            {
+                try
+                {
+                    string json = File.ReadAllText(inst);
+                    var port = Regex.Match(json, "\"port\"\\s*:\\s*(\\d+)");
+                    var token = Regex.Match(json, "\"token\"\\s*:\\s*\"([0-9a-f]+)\"");
+                    if (!port.Success || !token.Success) continue;
+                    var req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port.Groups[1].Value + "/api/rpc");
+                    req.Method = "POST"; req.ContentType = "application/json"; req.Timeout = 3000; req.Proxy = null;
+                    req.Headers["X-Token"] = token.Groups[1].Value;
+                    byte[] body = Encoding.UTF8.GetBytes("{\"method\":\"app.quit\"}");
+                    using (var st = req.GetRequestStream()) st.Write(body, 0, body.Length);
+                    using (req.GetResponse()) { }
+                    Log("Stopped a running window.");
+                    Thread.Sleep(900);
+                }
+                catch { /* not running */ }
+            }
+        }
+    }
+
+    /// The app used to be called something else: remove that install so only one remains. Settings are migrated by the app itself.
+    void RemoveLegacy()
+    {
+        if (DirOverride != null || Portable) return;
         try
         {
-            string inst = Path.Combine(dataDir, "instance.json");
-            if (!File.Exists(inst)) return;
-            string json = File.ReadAllText(inst);
-            var port = Regex.Match(json, "\"port\"\\s*:\\s*(\\d+)");
-            var token = Regex.Match(json, "\"token\"\\s*:\\s*\"([0-9a-f]+)\"");
-            if (!port.Success || !token.Success) return;
-            var req = (HttpWebRequest)WebRequest.Create("http://127.0.0.1:" + port.Groups[1].Value + "/api/rpc");
-            req.Method = "POST"; req.ContentType = "application/json"; req.Timeout = 3000; req.Proxy = null;
-            req.Headers["X-Token"] = token.Groups[1].Value;
-            byte[] body = Encoding.UTF8.GetBytes("{\"method\":\"app.quit\"}");
-            using (var s = req.GetRequestStream()) s.Write(body, 0, body.Length);
-            using (req.GetResponse()) { }
-            Log("Stopped the running git-helper.");
-            Thread.Sleep(900);
+            string key = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\" + LegacyName;
+            string dir = null;
+            using (var k = Registry.CurrentUser.OpenSubKey(key)) { if (k != null) dir = k.GetValue("InstallLocation") as string; }
+            if (dir == null) dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", LegacyName);
+            bool had = Directory.Exists(dir);
+            foreach (var lnk in new[] { Path.Combine(StartMenuDir(), LegacyName + ".lnk"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), LegacyName + ".lnk") })
+            {
+                try { if (File.Exists(lnk)) File.Delete(lnk); } catch { }
+            }
+            try { Registry.CurrentUser.DeleteSubKeyTree(key, false); } catch { }
+            if (had && !string.Equals(Path.GetFullPath(dir), Path.GetFullPath(installDir), StringComparison.OrdinalIgnoreCase)) { DeleteDir(dir); Log("Removed the previous version (" + LegacyName + ") from " + dir); }
         }
-        catch { /* not running */ }
+        catch (Exception e) { Log("Could not remove the previous version: " + e.Message); }
     }
 
     static void CreateShortcut(string lnk, string target)
@@ -456,7 +487,7 @@ class SetupForm : Form
         st.InvokeMember("TargetPath", BindingFlags.SetProperty, null, sc, new object[] { target });
         st.InvokeMember("WorkingDirectory", BindingFlags.SetProperty, null, sc, new object[] { Path.GetDirectoryName(target) });
         st.InvokeMember("IconLocation", BindingFlags.SetProperty, null, sc, new object[] { target + ",0" });
-        st.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { "git-helper: repositories, pull requests and GitHub Actions" });
+        st.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { "Repodeck: repositories, pull requests and GitHub Actions" });
         st.InvokeMember("Save", BindingFlags.InvokeMethod, null, sc, null);
     }
 
@@ -513,7 +544,7 @@ class SetupForm : Form
     static Version Probe(Tool t)
     {
         // For checking the "tools missing" screens without uninstalling anything.
-        string sim = Environment.GetEnvironmentVariable("GIT_HELPER_SETUP_SIMULATE_MISSING");
+        string sim = Environment.GetEnvironmentVariable("REPODECK_SETUP_SIMULATE_MISSING");
         if (!string.IsNullOrEmpty(sim) && ("," + sim + ",").Contains("," + t.Exe + ",")) return null;
         string path = Which(t.Exe);
         if (path == null) return null;

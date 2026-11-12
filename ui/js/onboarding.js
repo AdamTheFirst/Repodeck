@@ -94,7 +94,7 @@ export function setup(main) {
 
   function header() {
     return [
-      h('div', { class: 'row', style: { justifyContent: 'center', gap: '10px', fontSize: '17px', fontWeight: 650 } }, h('img', { src: '/icon.svg', width: 30, height: 30, alt: '' }), 'git-helper setup'),
+      h('div', { class: 'row', style: { justifyContent: 'center', gap: '10px', fontSize: '17px', fontWeight: 650 } }, h('img', { src: '/icon.svg', width: 30, height: 30, alt: '' }), 'Repodeck setup'),
       h('div', { class: 'steps' }, STEPS.flatMap((label, i) => [
         i ? h('span', { class: 'faint' }, '—') : null,
         h('button', { class: `step ${i === state.step ? 'on' : i < state.step ? 'done' : ''}`, disabled: i >= state.step, onclick: () => go(i) }, h('b', null, i < state.step ? '✓' : String(i + 1)), label),
@@ -154,7 +154,7 @@ export function setup(main) {
     const who = store.config.currentAccount;
     return [h('section', { class: 'panel wizard-card' },
       h('div', { class: 'col', style: { gap: '4px' } }, h('h1', null, who ? `Which folders belong to ${who}?` : 'Which folders hold your repositories?'),
-        h('span', { class: 'muted' }, 'Nothing is selected for you: tick the folders this workspace should show. Repositories nested inside them are included. Looking changes nothing on disk.')),
+        h('span', { class: 'muted' }, `${[...state.picked.values()].some((p) => p.kept) ? 'Folders this account already has are ticked; nothing else is selected for you.' : 'Nothing is selected for you: tick the folders this workspace should show.'} Repositories nested inside them are included. Looking changes nothing on disk.`)),
       h('div', { class: 'col', style: { gap: '10px' } }, rows),
       h('div', { class: 'row' }, btn('Add another folder…', async () => { const p = await pickFolder('Add a folder that contains repositories'); if (p) { state.picked.set(norm(p), { path: p, count: null }); draw(); } }, { iconName: 'plus' }),
         state.found ? h('span', { class: 'faint', style: { fontSize: '12px' } }, `${plural(state.found.folders.length, 'folder')} found${state.found.timedOut ? ' (search stopped after 10 seconds)' : ''}`) : null)),

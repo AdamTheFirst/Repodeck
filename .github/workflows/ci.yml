@@ -32,5 +32,5 @@ jobs:
         run: ./scripts/build.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: git-helper-setup
+          name: Repodeck-setup
           path: dist/*.exe

@@ -156,16 +156,19 @@ function runDetail(view, r, runId) {
     lines.forEach((l, i) => { if (/##\[error\]|^Error[: ]|\bERROR\b|FAILED|Traceback|npm ERR!|error TS\d+|AssertionError|exit code [1-9]/.test(l.text)) errIdx.push(i); });
     const frag = document.createDocumentFragment();
     if (errIdx.length) {
-      frag.append(h('span', { class: 'grp' }, `▼ Errors (${errIdx.length} line(s)); full log below`));
+      // The failing lines with a little context, in their own box, before the full log.
       const shown = new Set();
-      for (const i of errIdx.slice(0, 40)) for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 2); k++) shown.add(k);
+      for (const i of errIdx.slice(0, 40)) for (let k = Math.max(0, i - 4); k <= Math.min(lines.length - 1, i + 2); k++) shown.add(k);
+      const bodyEl = h('div', { class: 'fb-body' });
       let prev = -2;
-      for (const k of [...shown].sort((a, b) => a - b)) {
-        if (k !== prev + 1) frag.append(h('span', { class: 'faint' }, '   …\n'));
-        frag.append(errIdx.includes(k) ? h('span', { class: 'err' }, lines[k].text.replace(/##\[error\]/, '')) : `${lines[k].text}\n`);
+      for (const k of [...shown].sort((p, q) => p - q)) {
+        if (k !== prev + 1 && prev !== -2) bodyEl.append(h('span', { class: 'faint' }, '   …\n'));
+        bodyEl.append(errIdx.includes(k) ? h('span', { class: 'err' }, lines[k].text.replace(/##\[error\]/, '')) : `${lines[k].text}\n`);
         prev = k;
       }
-      frag.append(h('span', { class: 'grp' }, '\n▼ Full log'));
+      const failedStep = (job.steps || []).find((st) => st.conclusion === 'failure');
+      frag.append(h('div', { class: 'fail-box' }, h('div', { class: 'fb-head' }, 'What failed', h('span', { class: 'spacer' }), h('span', { style: { fontWeight: 400 } }, failedStep ? failedStep.name : `${errIdx.length} error line(s)`)), bodyEl),
+        h('div', { class: 'eyebrow', style: { padding: '0 16px 6px', fontFamily: 'var(--font)' } }, `Full log · ${lines.length} lines`));
     }
     let step = null;
     for (const [i, l] of lines.entries()) {

@@ -8,7 +8,7 @@ const os = require('node:os');
 const { spawn } = require('node:child_process');
 const { git, write, makeRepo } = require('../test/helpers');
 
-const base = path.join(os.tmpdir(), 'git-helper-playground');
+const base = path.join(os.tmpdir(), 'repodeck-playground');
 const portArg = process.argv.indexOf('--port');
 const port = portArg > 0 ? +process.argv[portArg + 1] : 47900;
 const fresh = process.argv.includes('--fresh');
@@ -72,6 +72,6 @@ if (!fs.existsSync(cfgFile)) {
 }
 console.log(`Playground: ${root}\nData: ${data}`);
 const child = spawn(process.execPath, [path.join(__dirname, '..', 'server', 'main.js'), '--no-open'], {
-  env: { ...process.env, GIT_HELPER_DATA: data, GIT_HELPER_PRINT_URL: '1' }, stdio: 'inherit',
+  env: { ...process.env, REPODECK_DATA: data, REPODECK_PRINT_URL: '1' }, stdio: 'inherit',
 });
 child.on('exit', (c) => process.exit(c || 0));
