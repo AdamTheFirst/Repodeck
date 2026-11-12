@@ -98,6 +98,8 @@ Choose the folders that contain your repositories. Then open **Settings → Diag
 
 Remotes such as `git@github.com-work:owner/repo.git` use a host alias from your SSH config, which the GitHub CLI cannot map to a repository by itself. Repodeck reads the owner and repository name from the remote URL and passes them to `gh` explicitly, so aliases work.
 
+**Settings → SSH connections** lists the host aliases and keys in your `.ssh` folder, creates a connection with a new or existing key, tests it against GitHub and removes it again. The SSH config file is copied to the data folder before every change, only the one `Host` entry is touched, and private keys are never read. **Settings → Git configuration** edits common global git settings; **Settings → Guides** explains the usual multi-account setups.
+
 **Accounts are separate workspaces.** Each signed-in GitHub account has its own folders, repositories, Actions board and pull requests. Switch from the account button at the top right; nothing from one account shows up in another, and GitHub is only ever contacted as the open account. Switching inside Repodeck does not change which account `gh` uses in your terminal unless you choose that explicitly. The **GitHub** page lists every remote repository of the open account and shows which ones are cloned.
 
 ## Safety

@@ -89,7 +89,7 @@ export async function useAccount(login) {
   banner({ level: 'success', title: `Now showing ${login}`, body: store.config.roots.length ? null : 'This account has no folders yet. Pick its folders or clone its repositories.', timeout: 4000 });
 }
 
-async function signOut(login) {
+export async function signOut(login) {
   const a = info.accounts.find((x) => x.login === login);
   const ok = await confirmDanger({
     title: `Sign out ${login}?`,

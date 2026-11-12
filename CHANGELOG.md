@@ -10,6 +10,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Setup wizard in four steps; nothing is selected or saved until you confirm
 - Sidebar section for repositories on GitHub that are not cloned yet
 - GitHub page with clone status; Overview with one-click push, pull and review
+- Settings reorganised: Accounts & folders in one place, SSH connections (create, test, remove, copy keys), Git configuration, and Guides
 - Setup.exe with Install, Repair and Uninstall and a clear finish screen; it never starts the app by itself
 
 ## 0.1.0

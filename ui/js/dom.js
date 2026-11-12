@@ -76,6 +76,10 @@ const ICONS = {
   merge: 'M6 4v16M6 4a2 2 0 1 0 0 .01M6 9c0 4 6 5 12 5m0 0a2 2 0 1 0 0 .01',
   rocket: 'M12 15l-3-3c1-5 5-8 10-8 0 5-3 9-8 10zM9 12l-4 1-2 3 4 1M12 15l-1 4 3 2 1-4M15 9h.01',
   diff: 'M8 4v8M4 8h8M12 18h8M6 14l12 6M18 4v8',
+  key: 'M8 11a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM11 12l9-9M16 7l3 3M14 9l2 2',
+  book: 'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11M9 8h6',
+  user: 'M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 21a8 8 0 0 1 16 0',
+  sliders: 'M4 7h10m4 0h2M4 17h2m4 0h10M16 5v4M8 15v4',
 };
 export function icon(name, cls = '') {
   const ns = 'http://www.w3.org/2000/svg';

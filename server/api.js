@@ -335,7 +335,7 @@ const H = {
     const r = await require('./accounts').list();
     const cfg = config.get();
     const open = new Set((await require('./instances').others()).map((i) => i.account));
-    return { ...r, current: cfg.currentAccount, accounts: r.accounts.map((acc) => ({ ...acc, current: acc.login === cfg.currentAccount, elsewhere: open.has(acc.login), folders: (cfg.accountRoots[acc.login] || []).length })) };
+    return { ...r, current: cfg.currentAccount, accounts: r.accounts.map((acc) => ({ ...acc, current: acc.login === cfg.currentAccount, elsewhere: open.has(acc.login), folders: (cfg.accountRoots[acc.login] || []).length, folderList: cfg.accountRoots[acc.login] || [] })) };
   },
   'account.login': () => require('./accounts').startLogin(),
   'account.loginStatus': () => require('./accounts').loginStatus(),
@@ -389,6 +389,28 @@ const H = {
     for (const sl of state.slugs.values()) if (sl && sl.host && sl.host !== 'github.com') used.set(sl.host, (used.get(sl.host) || 0) + 1);
     return { hosts: [...out].filter((x) => P.looksLikeGitHub(x)), used: [...used].sort((x, y) => y[1] - x[1]).map(([host, count]) => ({ host, count })) };
   },
+  // SSH connections (host aliases and keys) with how each one is used in this workspace.
+  'ssh.list': async () => {
+    const r = await require('./ssh').list();
+    const cfg = config.get();
+    const used = new Map();
+    for (const sl of state.slugs.values()) if (sl && sl.host) used.set(sl.host, (used.get(sl.host) || 0) + 1);
+    for (const c of r.connections) {
+      c.repos = used.get(c.alias) || 0;
+      c.accounts = Object.entries(cfg.accountSsh || {}).filter(([, v]) => v && v.protocol === 'ssh' && v.host === c.alias).map(([login]) => login);
+    }
+    return r;
+  },
+  'ssh.publicKey': async (p) => ({ key: await require('./ssh').publicKey(p.file) }),
+  'ssh.generateKey': (p) => require('./ssh').generateKey(p),
+  'ssh.addHost': (p) => require('./ssh').addHost(p),
+  'ssh.removeHost': (p) => require('./ssh').removeHost(p),
+  'ssh.test': (p) => require('./ssh').test(p),
+  'ssh.openFolder': () => { const f = require('./ssh').configFile(); spawn('explorer.exe', fs.existsSync(f) ? [`/select,${f}`] : [path.dirname(f)], { detached: true, stdio: 'ignore' }).unref(); return { ok: true }; },
+  // Global git configuration.
+  'gitconfig.get': () => require('./gitconfig').get(),
+  'gitconfig.set': (p) => require('./gitconfig').set(p),
+  'gitconfig.reveal': async () => { const g = await require('./gitconfig').get(); if (!g.file) throw new Error('There is no global git configuration file yet. Change a setting to create it.'); spawn('explorer.exe', [`/select,${path.resolve(g.file)}`], { detached: true, stdio: 'ignore' }).unref(); return { ok: true }; },
   'gh.repoListAll': () => gh.repoListAll(),
   'repo.cloneMany': async (p) => {
     const parent = path.resolve(p.parent);
