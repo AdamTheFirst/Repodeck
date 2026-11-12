@@ -187,7 +187,7 @@ async function diagnostics(el) {
         mount(results, h('div', { class: bad.length ? 'warn-box' : 'info-box', style: { marginBottom: '8px' } }, bad.length ? `${plural(bad.length, 'repository')} need attention.` : `All ${res.length} repositories are reachable.`),
           h('table', { class: 'grid panel' }, h('tr', null, h('th', null, 'Repository'), h('th', null, 'Remote'), h('th', null, 'git'), h('th', null, 'GitHub')),
             res.map((x) => h('tr', null, h('td', null, x.label), h('td', { class: 'mono' }, x.remote || ''),
-              h('td', { style: { color: x.git === 'ok' ? 'var(--ok)' : 'var(--bad)' } }, x.git), h('td', { style: { color: String(x.gh).startsWith('ok') ? 'var(--ok)' : x.gh === 'n/a' || x.gh === 'not a GitHub remote' ? '' : 'var(--bad)' } }, x.gh)))));
+              h('td', { class: 'wrapcell', style: { color: x.git === 'ok' ? 'var(--ok)' : 'var(--bad)' } }, x.git), h('td', { class: 'wrapcell', style: { color: String(x.gh).startsWith('ok') ? 'var(--ok)' : x.gh === 'n/a' || x.gh === 'not a GitHub remote' ? '' : 'var(--bad)' } }, x.gh)))));
       } catch (err) { mount(results, h('div', { class: 'errbox' }, err.message)); }
       b.disabled = false;
     }, { cls: 'primary' })), results);

@@ -452,3 +452,25 @@ table.grid tr.clickable { cursor: pointer; }
 table.grid.fixed { table-layout: fixed; }
 table.grid.fixed td { overflow: hidden; }
 table.grid.fixed td .row { min-width: 0; }
+
+/* ---------- tables: one line per row unless a cell opts in ---------- */
+table.grid td { white-space: nowrap; }
+table.grid td.wrapcell, table.grid td .md, table.grid td .errbox { white-space: normal; }
+table.grid td.ellipsis { max-width: 0; }
+
+/* ---------- overview tiles ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.tile { text-align: left; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; cursor: pointer; color: var(--text); }
+.tile:hover:not(:disabled) { border-color: var(--border-strong); background: var(--hover); }
+.tile.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.tile.zero { opacity: .55; cursor: default; }
+.tile-n { font-size: 24px; font-weight: 650; line-height: 1.1; }
+.tile:not(.zero) .tile-n { color: var(--dirty); }
+.tile-l { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; margin-top: 4px; white-space: nowrap; }
+.empty h3 { font-size: 15px; }
+.pill-tabs { flex: none; }
+.pill-tabs button { white-space: nowrap; }
+.tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 6px 10px; cursor: pointer; color: var(--text); white-space: nowrap; }
+.chip-btn:hover { background: var(--hover); border-color: var(--border-strong); }

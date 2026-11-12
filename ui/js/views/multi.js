@@ -48,23 +48,33 @@ export async function runBulk(op, ids, args = {}, label) {
 
 // ---------- overview ----------
 function overview(page) {
+  let open = null;
   function draw() {
     const rows = store.repos.filter((r) => r.summary).map((r) => ({ r, s: r.summary }));
+    const go = (x, tab = 'changes') => navigate(`#/repo/${x.r.id}/${tab}`);
+    const run = (method, x, ok) => act(() => rpc(method, { id: x.r.id }), { ok: `${ok} ${x.r.label}` });
     const cats = [
-      ['Uncommitted changes', rows.filter((x) => x.s.dirty), (x) => `${x.s.dirty} change(s)`],
-      ['Unpushed commits', rows.filter((x) => x.s.ahead || (!x.s.upstream && x.s.unpushed)), (x) => (x.s.upstream ? `${x.s.ahead} to push to ${x.s.upstream}` : `${x.s.unpushed} on unpublished branch ${x.s.branch}`)],
-      ['Behind upstream', rows.filter((x) => x.s.behind), (x) => `${x.s.behind} to pull`],
-      ['Not on default branch', rows.filter((x) => x.s.branch && x.s.defaultBranch && x.s.branch !== x.s.defaultBranch), (x) => `on ${x.s.branch}${x.s.behindDefault ? `, ${x.s.behindDefault} behind ${x.s.defaultBranch}` : ''}`],
-      ['Stashes', rows.filter((x) => x.s.stash), (x) => `${x.s.stash} stash(es)`],
-      ['Operation in progress or locked', rows.filter((x) => (x.s.inProgress || []).length || x.s.locked || x.s.detached), (x) => [...(x.s.inProgress || []), x.s.locked ? 'index locked' : null, x.s.detached ? 'detached HEAD' : null].filter(Boolean).join(', ')],
+      { key: 'dirty', title: 'Uncommitted changes', icon: 'diff', list: rows.filter((x) => x.s.dirty), desc: (x) => plural(x.s.dirty, 'change'), action: (x) => btn('Review', () => go(x), { cls: 'small' }) },
+      { key: 'unpushed', title: 'Unpushed commits', icon: 'push', list: rows.filter((x) => x.s.ahead || (!x.s.upstream && x.s.unpushed)), desc: (x) => (x.s.upstream ? `${plural(x.s.ahead, 'commit')} to push to ${x.s.upstream}` : `${plural(x.s.unpushed, 'commit')} on ${x.s.branch}, not published`), action: (x) => btn(x.s.upstream ? 'Push' : 'Publish', () => run('repo.push', x, 'Pushed'), { cls: 'small primary' }) },
+      { key: 'behind', title: 'Behind upstream', icon: 'pull', list: rows.filter((x) => x.s.behind), desc: (x) => `${plural(x.s.behind, 'commit')} to pull`, action: (x) => btn('Pull', () => run('repo.pull', x, 'Pulled'), { cls: 'small primary', disabled: !!x.s.dirty, title: x.s.dirty ? 'Commit or stash changes first' : '' }) },
+      { key: 'off', title: 'Not on default branch', icon: 'branch', list: rows.filter((x) => x.s.branch && x.s.defaultBranch && x.s.branch !== x.s.defaultBranch), desc: (x) => `on ${x.s.branch}${x.s.behindDefault ? `, ${x.s.behindDefault} behind ${x.s.defaultBranch}` : ''}`, action: (x) => btn('Branches', () => go(x, 'branches'), { cls: 'small' }) },
+      { key: 'stash', title: 'Stashes', icon: 'stash', list: rows.filter((x) => x.s.stash), desc: (x) => plural(x.s.stash, 'stash'), action: (x) => btn('View', () => go(x, 'stashes'), { cls: 'small' }) },
+      { key: 'busy', title: 'In progress or blocked', icon: 'warn', list: rows.filter((x) => (x.s.inProgress || []).length || x.s.locked || x.s.detached || x.s.error), desc: (x) => [...(x.s.inProgress || []).map((o) => `${o} in progress`), x.s.locked ? 'index locked' : null, x.s.detached ? 'detached HEAD' : null, x.s.error ? 'cannot read status' : null].filter(Boolean).join(', '), action: (x) => btn('Open', () => go(x), { cls: 'small' }) },
     ];
+    if (open && !cats.find((c) => c.key === open).list.length) open = null;
+    const shown = open ? cats.filter((c) => c.key === open) : cats.filter((c) => c.list.length);
+    const clean = rows.length - store.repos.filter(needsAttention).length;
     mount(page,
-      h('div', { class: 'row', style: { marginBottom: '12px' } }, h('h2', null, 'Nothing forgotten'), h('span', { class: 'muted' }, `${store.repos.length} repositories, ${store.repos.filter(needsAttention).length} need attention`), h('span', { class: 'spacer' }),
-        btn('Fetch all', () => runBulk('fetch', store.repos.map((r) => r.id), {}, 'Fetch'), { cls: 'small', iconName: 'fetch' })),
-      cats.map(([title, list, desc]) => h('div', { style: { marginBottom: '16px' } },
-        h('div', { class: 'section-title' }, h('h3', null, title), h('span', { class: `badge ${list.length ? 'dirty' : ''}` }, list.length)),
-        list.length ? h('div', { class: 'panel' }, list.map((x) => h('div', { class: 'list-row', onclick: () => navigate(`#/repo/${x.r.id}/changes`) }, h('strong', { style: { minWidth: '240px' } }, x.r.label), h('span', { class: 'muted grow' }, desc(x)))))
-          : h('div', { class: 'faint' }, 'None.'))));
+      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Overview'), h('div', { class: 'muted' }, `${plural(store.repos.length, 'repository')}; ${clean} with nothing to do`)),
+        h('span', { class: 'spacer' }), btn('Fetch all', () => runBulk('fetch', store.repos.map((r) => r.id), {}, 'Fetch'), { iconName: 'fetch' })),
+      h('div', { class: 'tiles' }, cats.map((c) => h('button', { class: `tile ${open === c.key ? 'active' : ''} ${c.list.length ? '' : 'zero'}`, disabled: !c.list.length, onclick: () => { open = open === c.key ? null : c.key; draw(); } },
+        h('div', { class: 'tile-n' }, c.list.length), h('div', { class: 'tile-l' }, icon(c.icon, 'sm'), c.title)))),
+      shown.length ? shown.map((c) => h('div', { style: { marginBottom: '16px' } },
+        h('div', { class: 'section-title' }, h('h3', null, c.title), h('span', { class: 'badge' }, c.list.length)),
+        h('div', { class: 'panel' }, c.list.map((x) => h('div', { class: 'list-row', onclick: () => go(x) },
+          h('strong', { class: 'ellipsis', style: { width: '32%', flex: 'none' } }, x.r.label), h('span', { class: 'muted grow ellipsis' }, c.desc(x)),
+          h('span', { onclick: (e) => e.stopPropagation() }, c.action(x)))))))
+        : h('div', { class: 'empty' }, h('h3', null, 'Everything is clean'), h('div', null, 'No uncommitted, unpushed or unpulled work in any repository.')));
   }
   const un = subscribe('summary', debounce(draw, 300));
   draw();
@@ -95,12 +105,12 @@ function bulk(page) {
             h('div', { class: 'faint', style: { fontSize: '12px' } }, 'You will see exactly what runs where, and what is skipped and why, before anything happens.'),
             btn(`Preview on ${sel.size} selected`, () => { if (needsBranch && !args.branch) { banner({ level: 'warn', title: 'Enter a branch name', timeout: 3000 }); return; } runBulk(op, [...sel], args, ops[op]).then(() => draw()); }, { cls: 'primary', disabled: !sel.size }))),
         h('div', { class: 'grow' },
-          h('div', { class: 'row', style: { marginBottom: '8px' } }, h('strong', null, 'Repositories'), h('span', { class: 'spacer' }),
+          h('div', { class: 'row', style: { marginBottom: '8px' } }, h('strong', null, `Repositories (${sel.size} of ${repos.length} selected)`), h('span', { class: 'spacer' }), h('span', { class: 'muted' }, 'Select'),
             h('a', { onclick: () => { repos.forEach((r) => sel.add(r.id)); draw(); } }, 'all'), h('a', { onclick: () => { sel.clear(); draw(); } }, 'none'),
             h('a', { onclick: () => { sel.clear(); repos.filter(needsAttention).forEach((r) => sel.add(r.id)); draw(); } }, 'needing attention')),
-          h('table', { class: 'grid panel' }, h('tr', null, h('th', null, ''), h('th', null, 'Repository'), h('th', null, 'Branch'), h('th', null, 'State')),
+          h('table', { class: 'grid panel fixed' }, h('tr', null, h('th', { style: { width: '36px' } }, ''), h('th', null, 'Repository'), h('th', { style: { width: '30%' } }, 'Branch'), h('th', { style: { width: '170px' } }, 'State')),
             repos.map((r) => { const s = r.summary || {}; return h('tr', { class: 'clickable', onclick: () => { if (sel.has(r.id)) sel.delete(r.id); else sel.add(r.id); draw(); } },
-              h('td', null, h('input', { type: 'checkbox', checked: sel.has(r.id) })), h('td', null, r.label), h('td', { class: 'muted' }, s.branch || ''),
+              h('td', { style: { width: '32px' } }, h('input', { type: 'checkbox', checked: sel.has(r.id) })), h('td', { class: 'ellipsis' }, r.label), h('td', { class: 'muted ellipsis' }, s.branch || ''),
               h('td', null, s.dirty ? h('span', { class: 'badge dirty' }, `${s.dirty} changed`) : null, ' ', s.ahead ? h('span', { class: 'badge accent' }, `↑${s.ahead}`) : null, ' ', s.behind ? h('span', { class: 'badge warn' }, `↓${s.behind}`) : null)); })))));
   }
   draw();
@@ -116,13 +126,13 @@ function cleanup(page) {
     const sel = new Set(list.filter((x) => x.merged).map((x) => `${x.id}|${x.branch}`));
     function draw() {
       mount(page,
-        h('div', { class: 'row', style: { marginBottom: '10px' } }, h('h2', null, 'Branch cleanup'), h('span', { class: 'muted' }, 'Local branches already merged into the default branch, or whose remote branch was deleted. Fetch with prune first for accurate "gone" results.'),
+        h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Branch cleanup'), h('div', { class: 'muted' }, 'Local branches already merged into the default branch, or whose remote branch was deleted. Fetch and prune first for accurate results.')),
           h('span', { class: 'spacer' }), btn('Fetch and prune all', () => act(() => rpc('bulk.run', { op: 'fetch', ids: store.repos.map((r) => r.id) })).then(load), { cls: 'small' })),
         list.length ? h('table', { class: 'grid panel' }, h('tr', null, h('th', null, ''), h('th', null, 'Repository'), h('th', null, 'Branch'), h('th', null, 'Why'), h('th', null, 'Last commit')),
           list.map((x) => { const k = `${x.id}|${x.branch}`; return h('tr', { class: 'clickable', onclick: () => { if (sel.has(k)) sel.delete(k); else sel.add(k); draw(); } },
             h('td', null, h('input', { type: 'checkbox', checked: sel.has(k) })), h('td', null, x.label), h('td', { class: 'mono' }, x.branch),
             h('td', null, x.merged ? h('span', { class: 'badge ok' }, 'merged') : null, ' ', x.gone ? h('span', { class: x.merged ? 'badge' : 'badge warn', title: x.merged ? '' : 'The remote branch is gone but these commits are not in the default branch (for example after a squash merge). Deleting removes them from all branches.' }, x.merged ? 'remote gone' : 'remote gone, NOT merged') : null),
-            h('td', { class: 'muted' }, `${x.subject} · ${ago(x.time)}`)); }))
+            h('td', { class: 'muted wrapcell' }, `${x.subject} · ${ago(x.time)}`)); }))
           : h('div', { class: 'empty' }, 'Nothing to clean up.'),
         list.length ? h('div', { class: 'row', style: { marginTop: '12px' } }, h('span', { class: 'spacer' }), btn(`Delete ${sel.size} branch(es)…`, async () => {
           const items = list.filter((x) => sel.has(`${x.id}|${x.branch}`));
@@ -156,7 +166,7 @@ function search(page) {
   }
   const d = debounce(go, 500);
   q.addEventListener('input', d); author.addEventListener('input', d); since.addEventListener('change', go);
-  mount(page, h('div', { class: 'row', style: { marginBottom: '12px' } }, h('h2', null, 'Search commits in every repository'), q, author, since), results);
+  mount(page, h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Search commits'), h('div', { class: 'muted' }, 'Across every repository of this account.'))), h('div', { class: 'row', style: { marginBottom: '12px' } }, q, author, since), results);
   q.focus();
   return null;
 }

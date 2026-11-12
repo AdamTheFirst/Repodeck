@@ -14,7 +14,8 @@ export function render(main) {
     const list = entries.filter((e) => (!onlyFailed || !e.ok) && (!repo || e.repo === repo) && (!text || e.command.toLowerCase().includes(text.toLowerCase()))).slice().reverse();
     const repos = [...new Set(entries.map((e) => e.repo).filter(Boolean))].sort();
     mount(page,
-      h('div', { class: 'row', style: { marginBottom: '12px' } }, h('h2', null, 'Activity'), h('span', { class: 'muted' }, 'Every git and GitHub CLI command run by git-helper, newest first. Background status checks are not listed.'), h('span', { class: 'spacer' }),
+      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Activity'), h('div', { class: 'muted' }, 'Every git and GitHub CLI command git-helper ran, newest first. Background status checks are not listed.'))),
+      h('div', { class: 'row', style: { marginBottom: '12px' } },
         h('input', { type: 'search', placeholder: 'Filter commands', value: text, oninput: (e) => { text = e.target.value; draw(); } }),
         h('select', { onchange: (e) => { repo = e.target.value; draw(); } }, h('option', { value: '' }, 'All repositories'), repos.map((r) => h('option', { value: r, selected: r === repo }, r))),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: onlyFailed, onchange: (e) => { onlyFailed = e.target.checked; draw(); } }), 'Failures only'),
@@ -22,8 +23,8 @@ export function render(main) {
       list.length ? h('table', { class: 'grid panel' }, h('tr', null, h('th', null, 'When'), h('th', null, 'Repository'), h('th', null, 'Command'), h('th', null, 'Time'), h('th', null, 'Result')),
         list.slice(0, 800).map((e) => h('tr', null,
           h('td', { class: 'muted', style: { whiteSpace: 'nowrap' }, title: new Date(e.time).toLocaleString() }, ago(e.time)),
-          h('td', null, e.repo || ''),
-          h('td', { class: 'mono', style: { fontSize: '11px', wordBreak: 'break-all' } }, e.command, e.error ? h('div', { class: 'errbox', style: { marginTop: '4px' } }, e.error) : e.output ? h('div', { class: 'faint', style: { whiteSpace: 'pre-wrap', marginTop: '4px' } }, e.output.slice(0, 1500)) : null),
+          h('td', { class: 'ellipsis', style: { maxWidth: '220px' } }, e.repo || ''),
+          h('td', { class: 'mono wrapcell', style: { fontSize: '11px', wordBreak: 'break-all' } }, e.command, e.error ? h('div', { class: 'errbox', style: { marginTop: '4px' } }, e.error) : e.output ? h('div', { class: 'faint', style: { whiteSpace: 'pre-wrap', marginTop: '4px' } }, e.output.slice(0, 1500)) : null),
           h('td', { class: 'muted' }, `${e.ms} ms`),
           h('td', null, h('span', { class: `badge ${e.ok ? 'ok' : 'bad'}` }, e.ok ? 'ok' : `failed${e.code != null ? ` (${e.code})` : ''}`)))))
         : h('div', { class: 'empty' }, 'No commands yet.'));

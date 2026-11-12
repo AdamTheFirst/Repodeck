@@ -17,7 +17,21 @@ export function render(main, parts) {
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') find(); });
   const table = h('div');
 
-  rpc('feature.branches').then((list) => mount(datalist, list.map((b) => h('option', { value: b.name }, `${b.count} repositories`)))).catch(() => {});
+  let suggestions = [];
+  rpc('feature.branches').then((list) => {
+    suggestions = list;
+    mount(datalist, list.map((b) => h('option', { value: b.name }, `${b.count} repositories`)));
+    if (!branch) landing();
+  }).catch(() => {});
+  function landing() {
+    const multi = suggestions.filter((b) => b.count > 1);
+    const rest = suggestions.filter((b) => b.count === 1).slice(0, 30);
+    const chip = (b) => h('button', { class: 'chip-btn', onclick: () => { input.value = b.name; find(); } }, icon('branch', 'sm'), h('span', { class: 'mono' }, b.name), h('span', { class: 'badge' }, b.count));
+    mount(table,
+      multi.length ? [h('div', { class: 'section-title' }, h('h3', null, 'Branches in several repositories')), h('div', { class: 'chips' }, multi.map(chip))] : null,
+      rest.length ? [h('div', { class: 'section-title' }, h('h3', null, 'Other local branches')), h('div', { class: 'chips' }, rest.map(chip))] : null,
+      !suggestions.length ? h('div', { class: 'empty' }, h('h3', null, 'No feature branches'), h('div', null, 'Every repository only has its default branch.')) : null);
+  }
 
   async function find() {
     branch = input.value.trim();
@@ -47,7 +61,7 @@ export function render(main, parts) {
           btn('Delete branch…', () => bulk('deleteBranch', 'Delete local branch'), { cls: 'small danger' }),
           iconBtn('refresh', 'Refresh', () => find())),
         h('table', { class: 'grid panel' },
-          h('tr', null, h('th', null, h('input', { type: 'checkbox', checked: sel.size === rows.length, onchange: (e) => { rows.forEach((x) => (e.target.checked ? sel.add(x.id) : sel.delete(x.id))); draw(); } })),
+          h('tr', null, h('th', { style: { width: '32px' } }, h('input', { type: 'checkbox', checked: sel.size === rows.length, onchange: (e) => { rows.forEach((x) => (e.target.checked ? sel.add(x.id) : sel.delete(x.id))); draw(); } })),
             h('th', null, 'Repository'), h('th', null, 'Where'), h('th', null, 'Local vs remote'), h('th', null, 'vs default'), h('th', null, 'Working tree'), h('th', null, 'Pull request'), h('th', null, 'Checks')),
           rows.map((x) => h('tr', null,
             h('td', null, h('input', { type: 'checkbox', checked: sel.has(x.id), onchange: (e) => { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); draw(); } })),
@@ -120,14 +134,14 @@ export function render(main, parts) {
     const failed = res.find((x) => x.status === 'failed');
     modal({ title: failed ? 'Merging stopped' : 'All merged', wide: true, body: h('div', { class: 'col' },
       h('table', { class: 'grid' }, h('tr', null, h('th', null, 'Repository'), h('th', null, 'Result'), h('th', null, 'Details')),
-        res.map((x) => h('tr', null, h('td', null, `${x.label} #${x.number}`), h('td', null, h('span', { class: `badge ${x.status === 'ok' ? 'ok' : x.status === 'failed' ? 'bad' : ''}` }, x.status)), h('td', { style: { whiteSpace: 'pre-wrap' } }, x.message || '')))),
+        res.map((x) => h('tr', null, h('td', null, `${x.label} #${x.number}`), h('td', null, h('span', { class: `badge ${x.status === 'ok' ? 'ok' : x.status === 'failed' ? 'bad' : ''}` }, x.status)), h('td', { class: 'wrapcell', style: { whiteSpace: 'pre-wrap' } }, x.message || '')))),
       h('div', { class: 'info-box' }, 'Workflow runs on each default branch are tracked on the Actions board; you will be notified when they finish.')),
     actions: [{ label: 'Open Actions board', value: 'board' }, { label: 'Close', cls: 'primary', default: true, value: null }] }).then((v) => { if (v === 'board') navigate('#/board'); });
     find();
   }
 
   mount(page,
-    h('div', { class: 'row', style: { marginBottom: '6px' } }, h('h2', null, 'Feature branches'), h('span', { class: 'muted' }, 'Work on one branch across many repositories.')),
+    h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Feature branches'), h('div', { class: 'muted' }, 'One branch across many repositories: see where it exists and act on all of them at once.'))),
     h('div', { class: 'row', style: { marginBottom: '8px' } }, input, datalist, btn('Find', () => find(), { cls: 'primary', iconName: 'search' }),
       h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Suggestions show branch names that exist in several repositories.')),
     table);
