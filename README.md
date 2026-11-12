@@ -49,22 +49,33 @@ It runs locally: a tiny Node.js server on `127.0.0.1` drives the `git` and `gh` 
 
 ## Install
 
-Download or clone this repository, then double-click `installer\Install.cmd`.
+Download `git-helper-setup-<version>.exe` from the Releases page and run it. Setup is a small window with three actions:
 
-The installer:
-1. Checks for Git, GitHub CLI and Node.js and, after asking, installs missing ones with `winget` (package ids `Git.Git`, `GitHub.cli`, `OpenJS.NodeJS.LTS`).
-2. Copies git-helper to `%LOCALAPPDATA%\Programs\git-helper` and adds Start menu and (optionally) desktop shortcuts and an uninstall entry. No admin rights are needed for this part.
-3. Nothing else: you sign in to GitHub inside the app (account button at the top right), and it can set your commit name and email too.
+- **Install**: copies git-helper to `%LOCALAPPDATA%\Programs\git-helper`, adds Start menu and desktop shortcuts and an entry in Installed apps. It installs for you only and never asks for administrator rights.
+- **Repair** (or **Update** when Setup is newer): replaces the program files, recreates shortcuts and installs any missing tool. Your settings are kept.
+- **Uninstall**: removes the program, shortcuts and the Installed apps entry. Settings are kept unless you tick the box. Git, GitHub CLI and Node.js stay installed.
 
-Re-running the installer upgrades in place and keeps your settings. To remove it, use Settings → Apps → Installed apps → git-helper, or run `installer\uninstall.ps1`. Git, GitHub CLI and Node.js stay installed.
+**Required tools.** Setup shows whether Git, GitHub CLI and Node.js are present. Anything missing is downloaded and installed with `winget` (package ids `Git.Git`, `GitHub.cli`, `OpenJS.NodeJS.LTS`) if you leave the box ticked. If winget itself is missing, git-helper is still installed and Setup tells you what to install; run Repair afterwards. You sign in to GitHub inside the app, not during setup.
 
-Requirements: Windows 10 or 11 with winget (App Installer) for automatic tool installation, or Git 2.30+, GitHub CLI 2.40+ and Node.js 20+ installed yourself.
+Setup is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" the first time: choose More info, then Run anyway.
 
-### Run without installing
+Command line: `/quiet` (no window), `/install`, `/repair`, `/uninstall`, `/dir "<folder>"`, `/portable` (no shortcuts, no Installed apps entry).
+
+Requirements: Windows 10 or 11.
+
+### Run from source
 
 ```
 node server/main.js
 ```
+
+### Build Setup yourself
+
+```
+powershell -File scripts\build.ps1
+```
+
+This uses the C# compiler that ships with Windows; nothing else is needed. Output goes to `dist\`.
 
 ## First start
 
@@ -87,7 +98,7 @@ Choose the folders that contain your repositories. Then open **Settings → Diag
 
 Remotes such as `git@github.com-work:owner/repo.git` use a host alias from your SSH config, which the GitHub CLI cannot map to a repository by itself. git-helper reads the owner and repository name from the remote URL and passes them to `gh` explicitly, so aliases work.
 
-If you are signed in to `gh` with more than one account, git-helper finds the account that can see each owner and remembers it. You can override the choice, or turn automatic detection off, in **Settings → GitHub accounts**.
+**Accounts are separate workspaces.** Each signed-in GitHub account has its own folders, repositories, Actions board and pull requests. Switch from the account button at the top right; nothing from one account shows up in another, and GitHub is only ever contacted as the open account. Switching inside git-helper does not change which account `gh` uses in your terminal unless you choose that explicitly. The **GitHub** page lists every remote repository of the open account and shows which ones are cloned.
 
 ## Safety
 
@@ -98,7 +109,7 @@ If you are signed in to `gh` with more than one account, git-helper finds the ac
 
 ## Troubleshooting
 
-- **"No access with the GitHub account used for …"**: pick another account for that owner in Settings, or run `gh auth login` with an account that can see it.
+- **"… cannot see this repository"**: the repository belongs to another account. Switch accounts from the button at the top right, and add the folder to that account.
 - **Push or fetch times out**: git-helper cannot type passwords or SSH passphrases. Use Git Credential Manager (installed with Git for Windows) for HTTPS, or load your key into ssh-agent.
 - **"The index is locked"**: another git program is running in that repository, or one crashed. If none is running, delete `.git\index.lock`.
 - **Notifications do not appear**: allow notifications for "Windows PowerShell" in Windows Settings → System → Notifications.
@@ -110,6 +121,7 @@ If you are signed in to `gh` with more than one account, git-helper finds the ac
 npm test                 # unit and integration tests (throwaway repositories in %TEMP%)
 npm run playground       # starts the app against a generated set of test repositories
 node scripts/make-icon.js
+powershell -File scripts\build.ps1   # git-helper.exe and the Setup exe, into dist\
 ```
 
 No build step and no npm dependencies.

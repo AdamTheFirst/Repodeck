@@ -8,3 +8,6 @@ node_modules/
 Thumbs.db
 coverage/
 .tmp/
+
+# Build output (scripts\build.ps1)
+dist/

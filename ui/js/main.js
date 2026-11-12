@@ -166,6 +166,10 @@ async function boot() {
   subscribe('accounts', renderTopbar);
   loadAccounts();
   connect();
+  rpc('app.diagnostics').then((d) => {
+    const missing = [['Git', d.git], ['GitHub CLI', d.gh]].filter(([, v]) => /not available/.test(v)).map(([n]) => n);
+    if (missing.length) banner({ level: 'error', title: `${missing.join(' and ')} not found`, body: `git-helper needs ${missing.join(' and ')}. Run git-helper Setup and choose Repair to install ${missing.length > 1 ? 'them' : 'it'}.${missing.includes('Git') ? '' : ' Local git features still work.'}`, timeout: 0 });
+  }).catch(() => {});
 
   // refresh on focus (cheap: one status call per repo, done server-side in parallel)
   let lastFocus = 0;
