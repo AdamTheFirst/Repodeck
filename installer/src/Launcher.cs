@@ -3,6 +3,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 
 static class Launcher
@@ -10,6 +13,7 @@ static class Launcher
     [STAThread]
     static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--brand") return Brand.Run();
         string root = AppDomain.CurrentDomain.BaseDirectory;
         string main = Path.Combine(root, "server", "main.js");
         if (!File.Exists(main))
@@ -70,5 +74,103 @@ static class Launcher
             catch { }
         }
         return null;
+    }
+}
+
+// "Repodeck.exe --brand": the app window is drawn by Microsoft Edge in app mode, so Windows would
+// list it as "Microsoft Edge" on the taskbar and pin Edge instead of Repodeck. This gives the window
+// Repodeck's own identity: its name in the taskbar menu, and Repodeck.exe as what gets pinned.
+static class Brand
+{
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPropertyStore
+    {
+        int GetCount(out uint count);
+        int GetAt(uint index, out PropertyKey key);
+        int GetValue(ref PropertyKey key, out PropVariant value);
+        int SetValue(ref PropertyKey key, ref PropVariant value);
+        int Commit();
+    }
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    struct PropertyKey { public Guid fmtid; public uint pid; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct PropVariant { public ushort vt; public ushort r1, r2, r3; public IntPtr p; public IntPtr p2; }
+
+    delegate bool EnumProc(IntPtr hwnd, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr lParam);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hwnd);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr hwnd, StringBuilder sb, int max);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, StringBuilder sb, int max);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, out IPropertyStore store);
+
+    static readonly Guid AppUserModel = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+    const string Id = "Repodeck.App"; // the same identity Setup registers for notifications
+
+    public static int Run()
+    {
+        string exe = Process.GetCurrentProcess().MainModule.FileName;
+        var done = new HashSet<IntPtr>();
+        DateTime stop = DateTime.UtcNow.AddSeconds(45);
+        DateTime? first = null;
+        while (DateTime.UtcNow < stop && (first == null || DateTime.UtcNow < first.Value.AddSeconds(6)))
+        {
+            foreach (IntPtr h in Find())
+            {
+                if (done.Contains(h)) continue;
+                if (Apply(h, exe)) { done.Add(h); if (first == null) first = DateTime.UtcNow; }
+            }
+            Thread.Sleep(350);
+        }
+        return done.Count > 0 ? 0 : 2;
+    }
+
+    // Edge app windows whose title is the one the Repodeck page sets.
+    static List<IntPtr> Find()
+    {
+        var found = new List<IntPtr>();
+        EnumWindows(delegate (IntPtr h, IntPtr l)
+        {
+            if (!IsWindowVisible(h)) return true;
+            var sb = new StringBuilder(256);
+            GetClassName(h, sb, sb.Capacity);
+            if (sb.ToString() != "Chrome_WidgetWin_1") return true;
+            sb.Clear();
+            GetWindowText(h, sb, sb.Capacity);
+            string t = sb.ToString();
+            if (t != "Repodeck" && !t.StartsWith("Repodeck · ")) return true;
+            uint pid;
+            GetWindowThreadProcessId(h, out pid);
+            try { if (Process.GetProcessById((int)pid).ProcessName.ToLowerInvariant() != "msedge") return true; } catch { return true; }
+            found.Add(h);
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    static bool Apply(IntPtr hwnd, string exe)
+    {
+        try
+        {
+            Guid iid = typeof(IPropertyStore).GUID;
+            IPropertyStore store;
+            if (SHGetPropertyStoreForWindow(hwnd, ref iid, out store) != 0 || store == null) return false;
+            bool ok = Set(store, 5, Id)                      // System.AppUserModel.ID
+                & Set(store, 2, "\"" + exe + "\"")            // RelaunchCommand
+                & Set(store, 4, "Repodeck")                  // RelaunchDisplayNameResource
+                & Set(store, 3, exe + ",0");                 // RelaunchIconResource
+            store.Commit();
+            Marshal.ReleaseComObject(store);
+            return ok;
+        }
+        catch { return false; }
+    }
+
+    static bool Set(IPropertyStore store, uint pid, string value)
+    {
+        var key = new PropertyKey { fmtid = AppUserModel, pid = pid };
+        var v = new PropVariant { vt = 31, p = Marshal.StringToCoTaskMemUni(value) }; // VT_LPWSTR
+        try { return store.SetValue(ref key, ref v) == 0; }
+        finally { Marshal.FreeCoTaskMem(v.p); }
     }
 }

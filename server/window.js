@@ -32,10 +32,18 @@ function open() {
       '--no-first-run', '--no-default-browser-check', '--disable-sync', '--disable-extensions', '--disable-component-extensions-with-background-pages',
       '--disable-features=msImplicitSignin,msEdgeSyncConsent,msEdgeWelcomePage,Translate', '--disable-background-networking',
       '--window-size=1440,900'], { detached: true, stdio: 'ignore' }).unref();
+    brand();
     return;
   }
   if (process.platform === 'win32') spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore' }).unref();
   else spawn(process.platform === 'darwin' ? 'open' : 'xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+}
+
+// Edge draws the window, so Windows would call it "Microsoft Edge" on the taskbar. The launcher gives it
+// Repodeck's own name and makes "Pin to taskbar" pin Repodeck. Only available in an installed copy.
+function brand() {
+  const exe = path.join(__dirname, '..', 'Repodeck.exe');
+  if (fs.existsSync(exe)) spawn(exe, ['--brand'], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
 /** The title the page sets, so the window can be found again. */
