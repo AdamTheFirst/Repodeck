@@ -93,8 +93,8 @@ class SetupForm : Form
         Controls.Add(toolsPanel);
 
         chkTools = new CheckBox { Text = "Download and install missing tools with winget (official source)", Location = new Point(22, 242), AutoSize = true, Checked = true };
-        chkDesktop = new CheckBox { Text = "Create a desktop shortcut", Location = new Point(22, 266), AutoSize = true, Checked = true };
-        chkLaunch = new CheckBox { Text = "Start git-helper when finished", Location = new Point(22, 290), AutoSize = true, Checked = true };
+        chkDesktop = new CheckBox { Text = "Create a desktop shortcut", Location = new Point(22, 266), AutoSize = true, Checked = false };
+        chkLaunch = new CheckBox { Text = "Start git-helper when finished", Location = new Point(22, 290), AutoSize = true, Checked = false, Visible = false }; // the finish screen has an Open button instead
         chkData = new CheckBox { Text = "Also delete my settings, logs and safety copies of discarded changes", Location = new Point(22, 266), AutoSize = true, Visible = false };
         Controls.Add(chkTools); Controls.Add(chkDesktop); Controls.Add(chkLaunch); Controls.Add(chkData);
 
@@ -154,7 +154,7 @@ class SetupForm : Form
         btnClose.Text = "Cancel";
         LayoutButtons(btnUninstallConfirm(), btnClose);
     }
-    Button confirmBtn;
+    Button confirmBtn, openBtn;
     Button btnUninstallConfirm()
     {
         if (confirmBtn == null)
@@ -186,7 +186,7 @@ class SetupForm : Form
         chkTools.Visible = anyMissing && !uninstallMode;
         chkTools.Checked = anyMissing;
         int oy = anyMissing ? 266 : 242;
-        chkDesktop.Location = new Point(22, oy); chkLaunch.Location = new Point(22, oy + 24);
+        chkDesktop.Location = new Point(22, oy);
         chkDesktop.Visible = !Portable && !uninstallMode;
         if (uninstallMode) return;
         if (installed)
@@ -261,9 +261,15 @@ class SetupForm : Form
         }
         uninstallMode = false;
         RefreshState();
-        status.Text = (action == "repair" ? "git-helper was repaired." : "git-helper is installed.") + (toolsMissing ? "\nSome required tools are still missing; see below." : "\nSign in to GitHub inside the app (button at the top right).");
-        LayoutButtons(btnClose);
-        if (!toolsMissing && launch) StartApp();
+        // Make the result unmistakable, and never start the app unless the user asks.
+        title.Text = toolsMissing ? "Installed, with warnings" : (action == "repair" ? "Repair complete" : "Installation complete");
+        subtitle.Text = toolsMissing ? "Some required tools are still missing" : "git-helper " + BuildInfo.Version + " is ready to use";
+        status.Font = new Font("Segoe UI Semibold", 10f);
+        status.ForeColor = toolsMissing ? Color.FromArgb(154, 97, 0) : Color.FromArgb(31, 122, 67);
+        status.Text = toolsMissing ? "git-helper is installed, but it cannot run until the tools marked below are installed.\nInstall them, then run Setup again and choose Repair." : "✔  git-helper is installed. You will find it in the Start menu.\nNothing was opened: use the button below when you want to start it.";
+        chkTools.Visible = chkDesktop.Visible = false;
+        if (openBtn == null) { openBtn = MakeButton("Open git-helper", 0, true); openBtn.Size = new Size(140, 32); openBtn.Click += delegate { StartApp(); Close(); }; }
+        if (toolsMissing) LayoutButtons(btnClose); else LayoutButtons(openBtn, btnClose);
     }
 
     void StartApp()

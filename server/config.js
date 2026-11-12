@@ -5,7 +5,7 @@ const { paths, writeJsonAtomic } = require('./paths');
 const DEFAULTS = {
   version: 1,
   port: 47821,
-  currentAccount: '',        // GitHub login whose workspace is shown ('' = no account)
+  currentAccount: '',        // GitHub login that was open last ('' = no account); each running window has its own
   accountRoots: {},          // login -> [{ path, name }]; each account has its own folders
   ignore: ['node_modules', '.venv', '.venv*', 'venv', 'dist', 'build', 'out', 'target',
     '.pnpm-store', '.next', '.nuxt', '.cache', '.tmp', 'bin', 'obj', '__pycache__', '.gradle', '.idea'],
@@ -34,11 +34,17 @@ const DEFAULTS = {
   firstRunDone: false,
 };
 
-let current = null;
+const UNASSIGNED = '*';
+const LOCAL = '_local';
 
+let current = null;        // what is on disk (plus defaults)
+let view = null;           // what the app sees
 let loadProblem = null;
+// The account this process shows. Several windows can run at once, one per account, and they
+// share the settings file, so the open account lives in memory, not in the file.
+let sessionAccount = null;
 
-function load() {
+function readDisk() {
   let saved = {};
   let raw = null;
   try { raw = fs.readFileSync(paths.config, 'utf8'); } catch {}
@@ -61,37 +67,43 @@ function load() {
     delete saved.roots;
   }
   delete saved.accountForOwner; delete saved.autoDetectAccounts;
-  current = { ...DEFAULTS, ...saved };
+  return { ...DEFAULTS, ...saved };
+}
+
+function load() {
+  current = readDisk();
   view = null;
   return get();
 }
+function problem() { return loadProblem; }
 
-const UNASSIGNED = '*';
-const LOCAL = '_local';
-let view = null;
-/** Which folder list is in effect: the current account's, else unassigned folders, else the no-account list. */
+const account = () => (sessionAccount != null ? sessionAccount : current.currentAccount);
+
+/** Which folder list is in effect: the open account's, else unassigned folders, else the no-account list. */
 function rootsKey(cfg = current) {
-  if (cfg.currentAccount) return cfg.currentAccount;
+  const a = account();
+  if (a) return a;
   return cfg.accountRoots[UNASSIGNED] ? UNASSIGNED : LOCAL;
 }
+
+/** Settings as the rest of the app sees them: `currentAccount` is this window's account, `roots` its folders. */
+function get() {
+  if (!current) return load();
+  if (!view) view = { ...current, currentAccount: account(), roots: current.accountRoots[rootsKey()] || [] };
+  return view;
+}
+
 /** Give folders from before accounts existed to the first account that is used. */
 function adoptUnassigned(login) {
   get();
-  const ar = { ...current.accountRoots };
-  if (!login || !ar[UNASSIGNED]) return;
+  const disk = readDisk();
+  const ar = { ...disk.accountRoots };
+  if (!login || !ar[UNASSIGNED]) { current = disk; view = null; return; }
   if (!ar[login] || !ar[login].length) ar[login] = ar[UNASSIGNED];
   delete ar[UNASSIGNED];
-  current = { ...current, accountRoots: ar };
+  current = { ...disk, accountRoots: ar };
   writeJsonAtomic(paths.config, current);
   view = null;
-}
-function problem() { return loadProblem; }
-
-/** Settings as the rest of the app sees them: `roots` is the current account's folder list. */
-function get() {
-  if (!current) return load();
-  if (!view) view = { ...current, roots: current.accountRoots[rootsKey()] || [] };
-  return view;
 }
 
 const VALID = {
@@ -109,7 +121,8 @@ const VALID = {
 
 function update(patch) {
   get();
-  const cfg = { ...current };
+  // Start from what is on disk now: another window may have saved since we last read.
+  const cfg = readDisk();
   for (const [k, v] of Object.entries(patch || {})) {
     if (k === 'roots') {
       if (!VALID.roots(v)) throw new Error('Invalid value for setting "roots"');
@@ -122,6 +135,7 @@ function update(patch) {
       throw new Error(`Setting "${k}" must be a positive number`);
     }
     if (typeof DEFAULTS[k] === 'boolean' && typeof v !== 'boolean') throw new Error(`Setting "${k}" must be true or false`);
+    if (k === 'currentAccount') sessionAccount = v; // this window's account; the file remembers it as "last opened"
     cfg[k] = v;
   }
   writeJsonAtomic(paths.config, cfg);
@@ -130,4 +144,7 @@ function update(patch) {
   return get();
 }
 
-module.exports = { get, load, update, problem, adoptUnassigned, DEFAULTS };
+/** Pin this process to an account without touching the settings file (used by --account). */
+function setSessionAccount(login) { get(); sessionAccount = login || ''; view = null; }
+
+module.exports = { get, load, update, problem, adoptUnassigned, setSessionAccount, DEFAULTS };

@@ -160,8 +160,7 @@ export function setup(main) {
   drawAccounts();
   rpc('setup.discover').then((r) => {
     found = r;
-    // preselect real groups (not single repos sitting in a drive root or home)
-    if (!picked.size) for (const f of r.folders) if (!f.single) picked.set(norm(f.path), f);
+    // Nothing is selected for the user: they tick the folders they want.
     for (const f of r.folders) { const p = picked.get(norm(f.path)); if (p) p.count = f.count; }
     drawFound();
   }).catch((e) => { found = { folders: [] }; drawFound(); banner({ level: 'error', title: 'Automatic search failed', body: e.message }); });
