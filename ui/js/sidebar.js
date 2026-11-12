@@ -166,8 +166,23 @@ function renderTree() {
   }
   out.push(...hiddenSection());
   out.push(...remoteSection());
-  mount(treeEl, out);
-  treeEl.scrollTop = scroll;
+  sync(treeEl, out.flat(Infinity).filter(Boolean));
+  if (treeEl.scrollTop !== scroll) treeEl.scrollTop = scroll;
+}
+
+// The list is redrawn on every status update. Rows that come out the same keep their element, so the
+// row under the pointer does not lose and regain its hover state (which showed as flicker).
+const drawn = new WeakMap(); // element -> its HTML when it was put in
+function sync(parent, nodes) {
+  const old = [...parent.children];
+  nodes.forEach((n, i) => {
+    const html = n.outerHTML;
+    const cur = parent.children[i];
+    if (cur && drawn.get(cur) === html) return;
+    drawn.set(n, html);
+    if (cur) parent.replaceChild(n, cur); else parent.appendChild(n);
+  });
+  for (const o of old.slice(nodes.length)) o.remove();
 }
 
 function hiddenSection() {
