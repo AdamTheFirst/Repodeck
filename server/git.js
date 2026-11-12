@@ -5,14 +5,58 @@ const path = require('node:path');
 const { run, ProcError } = require('./proc');
 const P = require('./parse');
 const { paths } = require('./paths');
+const config = require('./config');
 
 const GIT_BASE = ['-c', 'core.quotepath=false', '-c', 'color.ui=false', '-c', 'core.pager=cat',
   '-c', 'advice.detachedHead=false', '-c', 'i18n.logOutputEncoding=UTF-8'];
 
 const NETWORK_TIMEOUT = 5 * 60_000;
 
-function git(repo, args, opts = {}) {
-  return run('git', [...GIT_BASE, ...args], { cwd: repo.path, repo: repo.label || repo.name, timeout: opts.timeout ?? 60_000, displayArgs: args, ...opts });
+// ---------------- how git reaches GitHub ----------------
+// An account set to SSH talks to GitHub over SSH in every repository, also in ones that were cloned
+// with an https:// address. The address is rewritten for the one command only; the repository's own
+// settings are not touched, so it behaves as before in a terminal.
+const NETWORK = new Set(['fetch', 'pull', 'push', 'ls-remote', 'clone', 'submodule']);
+const SSH_HOST = /^[A-Za-z0-9._-]+$/;
+
+/** Pure: the "-c" options for an account's connection setting ({ protocol, host }). */
+function transportArgs(setting) {
+  if (!setting || setting.protocol !== 'ssh') return [];
+  const host = setting.host && SSH_HOST.test(setting.host) ? setting.host : 'github.com';
+  return ['-c', `url.git@${host}:.insteadOf=https://github.com/`];
+}
+
+const ownSsh = new Map(); // folder -> the user set their own ssh command there
+async function transport(cwd, args) {
+  if (!NETWORK.has(args[0])) return { args: [], env: {} };
+  const cfg = config.get();
+  const extra = transportArgs((cfg.accountSsh || {})[cfg.currentAccount]);
+  const env = {};
+  // A host that was never used before is added to known_hosts instead of failing: nobody can answer
+  // ssh's "are you sure" question here. A host whose key CHANGED is still refused.
+  if (!process.env.GIT_SSH_COMMAND && !process.env.GIT_SSH) {
+    if (!ownSsh.has(cwd)) {
+      const r = await run('git', ['config', '--get', 'core.sshCommand'], { cwd, quiet: true, okCodes: [0, 1], timeout: 15_000 }).catch(() => null);
+      ownSsh.set(cwd, !!(r && r.stdout.trim()));
+    }
+    if (!ownSsh.get(cwd)) env.GIT_SSH_COMMAND = 'ssh -o StrictHostKeyChecking=accept-new';
+  }
+  return { args: extra, env };
+}
+
+async function git(repo, args, opts = {}) {
+  const t = await transport(repo.path, args);
+  const p = run('git', [...GIT_BASE, ...t.args, ...args], { cwd: repo.path, repo: repo.label || repo.name, timeout: opts.timeout ?? 60_000, displayArgs: args, ...opts, env: { ...t.env, ...(opts.env || {}) } });
+  if (!NETWORK.has(args[0])) return p;
+  return p.catch((e) => {
+    // GitHub answers "not found" for a missing repository and for one the account may not see.
+    if (/Repository not found|ERROR: Repository not found/i.test(e.message || '')) {
+      const who = config.get().currentAccount;
+      e.message += `
+${who ? `The open account (${who})` : 'This sign-in'} cannot see this repository on GitHub: it was deleted or renamed, or it belongs to another account.`;
+    }
+    throw e;
+  });
 }
 const out = async (repo, args, opts) => (await git(repo, args, opts)).stdout;
 const quiet = (repo, args, opts = {}) => git(repo, args, { quiet: true, ...opts });
@@ -809,7 +853,8 @@ async function clone({ url, dest }) {
   if (!url || url.startsWith('-')) throw new Error('Invalid URL');
   if (exists(dest)) throw new Error(`"${dest}" already exists.`);
   fs.mkdirSync(path.dirname(dest), { recursive: true });
-  await run('git', [...GIT_BASE, 'clone', '--', url, dest], { cwd: path.dirname(dest), timeout: 30 * 60_000, repo: path.basename(dest) });
+  const t = await transport(path.dirname(dest), ['clone']);
+  await run('git', [...GIT_BASE, ...t.args, 'clone', '--', url, dest], { env: t.env, cwd: path.dirname(dest), timeout: 30 * 60_000, repo: path.basename(dest) });
 }
 async function init({ dir }) {
   fs.mkdirSync(dir, { recursive: true });
@@ -895,6 +940,7 @@ async function lastCommitTime(repo) {
 }
 
 module.exports = {
+  transportArgs,
   git, info, opState, remotes, githubSlug, defaultBranch, forgetDefault, status, summary, changes, refExists, hasHead,
   fileDiff, changedFiles, fingerprint, stage, stageAll, unstage, unstageAll, applySelection,
   discard, discardAll, listBackups, restoreBackup,

@@ -7,7 +7,7 @@ const DEFAULTS = {
   port: 47821,
   currentAccount: '',        // GitHub login that was open last ('' = no account); each running window has its own
   accountRoots: {},          // login -> [{ path, name }]; each account has its own folders
-  accountSsh: {},            // login -> { protocol: 'https' | 'ssh', host: 'github.com-work' } used when cloning
+  accountSsh: {},            // login -> { protocol: 'https' | 'ssh', host: 'github.com-work' } how git reaches GitHub for that account
   savedFilters: {},          // login -> [{ name, text, attention }] saved sidebar filters
   ignore: ['node_modules', '.venv', '.venv*', 'venv', 'dist', 'build', 'out', 'target',
     '.pnpm-store', '.next', '.nuxt', '.cache', '.tmp', 'bin', 'obj', '__pycache__', '.gradle', '.idea'],

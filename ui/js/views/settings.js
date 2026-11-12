@@ -151,14 +151,14 @@ async function accounts(el) {
 
 function cloneRows(login, conns) {
   const cur = { protocol: 'https', host: '', ...((store.config.accountSsh || {})[login] || {}) };
-  const write = () => save({ accountSsh: { ...(store.config.accountSsh || {}), [login]: { protocol: cur.protocol, host: cur.host || '' } } }, 'Clone settings saved');
+  const write = () => save({ accountSsh: { ...(store.config.accountSsh || {}), [login]: { protocol: cur.protocol, host: cur.host || '' } } }, 'Connection saved');
   const names = [...new Set(['github.com', ...conns.map((c) => c.alias), cur.host].filter(Boolean))];
   const hostSel = h('select', { class: 'sel', disabled: cur.protocol !== 'ssh', onchange: (e) => { cur.host = e.target.value === 'github.com' ? '' : e.target.value; write(); } },
     names.map((n) => h('option', { value: n, selected: (cur.host || 'github.com') === n }, n === 'github.com' ? 'github.com (default key)' : n)));
   return [
-    h('div', { class: 'set-row sub set-divider' }, h('div', { class: 'set-label' }, h('div', { class: 'set-name' }, 'New clones use'), h('div', { class: 'set-desc' }, 'HTTPS uses the GitHub sign-in. SSH uses a key; pick the connection that holds this account’s key.')),
+    h('div', { class: 'set-row sub set-divider' }, h('div', { class: 'set-label' }, h('div', { class: 'set-name' }, 'Connect to GitHub with'), h('div', { class: 'set-desc' }, 'HTTPS uses the GitHub sign-in. SSH uses a key, for new clones and for fetch, pull and push in every repository, including ones cloned with an https:// address.')),
       h('div', { class: 'set-control' }, seg(cur.protocol === 'ssh' ? 'ssh' : 'https', [['https', 'HTTPS'], ['ssh', 'SSH']], (v) => { cur.protocol = v; hostSel.disabled = v !== 'ssh'; write(); }))),
-    h('div', { class: 'set-row sub' }, h('div', { class: 'set-label' }, h('div', { class: 'set-name' }, 'SSH connection'), h('div', { class: 'set-desc' }, 'Clones use git@<connection>:owner/repo.git. ', link('Manage SSH connections', '#/settings/ssh'))),
+    h('div', { class: 'set-row sub' }, h('div', { class: 'set-label' }, h('div', { class: 'set-name' }, 'SSH connection'), h('div', { class: 'set-desc' }, 'The connection that holds this account’s key: git@<connection>:owner/repo.git. ', link('Manage SSH connections', '#/settings/ssh'))),
       h('div', { class: 'set-control' }, hostSel)),
   ];
 }
@@ -202,7 +202,7 @@ async function ssh(el, focus) {
   const results = new Map();
 
   const useForAccount = async (alias) => {
-    if (await save({ accountSsh: { ...(store.config.accountSsh || {}), [who]: { protocol: 'ssh', host: alias } } }, `New clones for ${who} use ${alias}`)) again();
+    if (await save({ accountSsh: { ...(store.config.accountSsh || {}), [who]: { protocol: 'ssh', host: alias } } }, `${who} now connects with ${alias}`)) again();
   };
 
   const runTest = async (c, box, b) => {
@@ -221,7 +221,7 @@ async function ssh(el, focus) {
   const connRow = (c) => {
     const box = h('div');
     const testBtn = btn('Test', () => runTest(c, box, testBtn), { cls: 'small', title: `Try to sign in to ${c.hostName} with this connection` });
-    const usage = [c.repos ? plural(c.repos, 'repository') + ' here' : null, c.accounts.length ? `new clones for ${c.accounts.join(', ')}` : null].filter(Boolean).join(' · ');
+    const usage = [c.repos ? plural(c.repos, 'repository') + ' here' : null, c.accounts.length ? `used by ${c.accounts.join(', ')}` : null].filter(Boolean).join(' · ');
     const problems = [!c.identityFile ? 'no key set, ssh tries your default keys' : null, c.key && !c.key.exists ? 'key file is missing' : null].filter(Boolean);
     return h('div', { class: 'set-block', id: `conn-${c.alias}` },
       h('div', { class: 'set-row' }, h('span', { class: 'set-ico' }, icon('key')),
@@ -232,7 +232,7 @@ async function ssh(el, focus) {
         h('div', { class: 'set-control' }, testBtn,
           c.key && c.key.hasPublic ? btn('Copy public key', () => copyPublicKey(c.identityFile), { cls: 'small', iconName: 'copy' }) : null,
           iconBtn('more', 'More', (e) => menuBelow(e.currentTarget, [
-            c.github && who && !c.accounts.includes(who) ? { label: `Use for new clones of ${who}`, action: () => useForAccount(c.alias) } : null,
+            c.github && who && !c.accounts.includes(who) ? { label: `Use for ${who}`, action: () => useForAccount(c.alias) } : null,
             c.github && c.key && c.key.hasPublic ? { label: 'Add this key to GitHub…', action: () => addKeyToGitHub(c.identityFile) } : null,
             { label: 'Copy clone address pattern', action: () => copyText(`git@${c.alias}:OWNER/REPO.git`) },
             { label: 'Remove connection…', danger: true, action: () => removeConn(c) },
@@ -245,7 +245,7 @@ async function ssh(el, focus) {
       title: `Remove connection ${c.alias}?`,
       message: `Removes the “Host ${c.alias}” entry from your SSH config file.`,
       items: [c.repos ? `${plural(c.repos, 'repository')} in this workspace use git@${c.alias}:… and will no longer be able to fetch or push until their remote address is changed.` : null,
-        c.accounts.length ? `New clones for ${c.accounts.join(', ')} are set to use it.` : null].filter(Boolean),
+        c.accounts.length ? `${c.accounts.join(', ')} connects to GitHub with it.` : null].filter(Boolean),
       recover: 'A copy of the config file is saved in Repodeck’s data folder first. The key files are not deleted.',
       confirmLabel: 'Remove',
     });
@@ -269,7 +269,7 @@ async function ssh(el, focus) {
   mount(el,
     title(btn('New connection…', () => newConnection(d, who, again), { cls: 'primary', iconName: 'plus' }), iconBtn('folder', 'Show the SSH config file in Explorer', () => rpc('ssh.openFolder')), iconBtn('refresh', 'Reload', again)),
     !d.ssh ? note('warn-box', 'OpenSSH was not found on this computer. Install it from Windows Settings → System → Optional features → OpenSSH Client.') : null,
-    who && mine.protocol !== 'ssh' ? note('info-box', `New clones for ${who} use HTTPS, so no SSH connection is needed for them. `, link('Change in Accounts & folders', '#/settings/accounts')) : null,
+    who && mine.protocol !== 'ssh' ? note('info-box', `${who} connects to GitHub with HTTPS, so no SSH connection is needed. `, link('Change in Accounts & folders', '#/settings/accounts')) : null,
     card(d.connections.length ? d.connections.map(connRow)
       : h('div', { class: 'empty' }, h('h3', null, 'No connections yet'), h('div', null, 'Create one to give a GitHub account its own key. Without connections, SSH uses your default key for github.com.'),
         h('div', { class: 'row', style: { justifyContent: 'center', marginTop: '12px' } }, btn('New connection…', () => newConnection(d, who, again), { cls: 'primary', iconName: 'plus' })))),
@@ -324,8 +324,8 @@ async function finishConnection({ alias, file, created, who, github }) {
     mount(result, r.ok ? h('div', { class: 'set-test ok' }, icon('check', 'sm'), h('div', null, 'Works. GitHub recognises this key as ', h('strong', null, r.login), '.'))
       : h('div', { class: 'set-test bad' }, icon('warn', 'sm'), h('div', { class: 'grow' }, r.hint || 'The connection did not work.', r.output ? h('pre', { class: 'set-out' }, r.output) : null)));
   }, { cls: 'small' });
-  const useBtn = who && github ? btn(`Use for new clones of ${who}`, async () => {
-    if (await save({ accountSsh: { ...(store.config.accountSsh || {}), [who]: { protocol: 'ssh', host: alias } } }, `New clones for ${who} use ${alias}`)) { useBtn.disabled = true; useBtn.textContent = 'Set'; }
+  const useBtn = who && github ? btn(`Use for ${who}`, async () => {
+    if (await save({ accountSsh: { ...(store.config.accountSsh || {}), [who]: { protocol: 'ssh', host: alias } } }, `${who} now connects with ${alias}`)) { useBtn.disabled = true; useBtn.textContent = 'Set'; }
   }, { cls: 'small' }) : null;
   await modal({
     title: `Connection ${alias} created`,
@@ -464,7 +464,7 @@ const GUIDES = [
       h('li', null, 'Open ', link('SSH connections', '#/settings/ssh'), ' and choose New connection. Name it after the account, for example ', h('code', null, 'github-work'), ', and let Repodeck create a new key.'),
       h('li', null, 'Copy the public key and add it on GitHub while the browser is signed in to that account.'),
       h('li', null, 'Press Test. GitHub answers with the account name the key belongs to.'),
-      h('li', null, 'In ', link('Accounts & folders', '#/settings/accounts'), ', set “New clones use” to SSH and pick the connection.')),
+      h('li', null, 'In ', link('Accounts & folders', '#/settings/accounts'), ', set “Connect to GitHub with” to SSH and pick the connection.')),
     h('p', null, 'A repository cloned through the connection has an address like this, and always uses that account’s key:'),
     code('git@github-work:owner/repo.git')]],
   ['add-key', 'Add an SSH key to GitHub', 'plus', () => [

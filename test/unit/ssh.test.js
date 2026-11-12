@@ -115,3 +115,12 @@ test('git config: only known keys and valid values are accepted', async () => {
     assert.ok(g.all.some((x) => x.key === 'init.defaultbranch'));
   } finally { if (prev === undefined) delete process.env.GIT_CONFIG_GLOBAL; else process.env.GIT_CONFIG_GLOBAL = prev; rm(dir); }
 });
+
+test('an account set to SSH rewrites https GitHub addresses for one command', () => {
+  const { transportArgs } = require('../../server/git');
+  assert.deepEqual(transportArgs(undefined), []);
+  assert.deepEqual(transportArgs({ protocol: 'https', host: 'github.com-work' }), []);
+  assert.deepEqual(transportArgs({ protocol: 'ssh', host: '' }), ['-c', 'url.git@github.com:.insteadOf=https://github.com/']);
+  assert.deepEqual(transportArgs({ protocol: 'ssh', host: 'github.com-work' }), ['-c', 'url.git@github.com-work:.insteadOf=https://github.com/']);
+  assert.deepEqual(transportArgs({ protocol: 'ssh', host: 'bad host -oProxyCommand=x' }), ['-c', 'url.git@github.com:.insteadOf=https://github.com/']);
+});
