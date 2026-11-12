@@ -2,7 +2,7 @@
 <h1 align="center">Repodeck</h1>
 <p align="center">All your git repositories in one window: source control, commit graph, pull requests and GitHub Actions.</p>
 <p align="center">
-  <a href="https://github.com/AdamTheFirst/Repodeck/releases/latest/download/repodeck-setup.exe"><b>Download for Windows</b></a>
+  <a href="https://github.com/AdamTheFirst/Repodeck/releases/latest/download/RepodeckSetup.exe"><b>Download for Windows</b></a>
   &nbsp;·&nbsp; <a href="https://github.com/AdamTheFirst/Repodeck/releases">All releases</a>
   &nbsp;·&nbsp; <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -13,7 +13,7 @@ It runs entirely on your computer. A small local server drives the `git` and `gh
 
 ## Install
 
-1. Download [`repodeck-setup.exe`](https://github.com/AdamTheFirst/Repodeck/releases/latest/download/repodeck-setup.exe).
+1. Download [`RepodeckSetup.exe`](https://github.com/AdamTheFirst/Repodeck/releases/latest/download/RepodeckSetup.exe).
 2. Run it and follow the four steps.
 
 Setup lets you choose:
@@ -26,7 +26,7 @@ Setup lets you choose:
 
 Run Setup again later to update, repair or uninstall; it is also listed under Installed apps in Windows. Uninstalling keeps your settings unless you tick the box, and never touches your repositories.
 
-> Setup is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" the first time. Choose **More info**, then **Run anyway**. Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
+> Setup is not code-signed yet. Windows SmartScreen may show "Windows protected your PC" the first time: choose **More info**, then **Run anyway**. On computers where **Smart App Control** is on, Windows blocks unsigned apps without that choice; there Repodeck can only be run from source until releases are signed. Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
 
 Requirements: Windows 10 or 11.
 

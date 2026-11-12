@@ -1,6 +1,6 @@
 {
   "name": "repodeck",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A lightweight local app for many git repositories: source control, commit graph, pull requests and GitHub Actions status in one window.",
   "private": true,
   "license": "MIT",

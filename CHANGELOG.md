@@ -2,6 +2,13 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.0.1
+
+- Setup is now named `RepodeckSetup.exe`
+- Setup and the app show their icon in Explorer, in browsers' download lists and on the taskbar at every size
+- The icon has no background tile
+- Tests run on Node 20 as well as Node 22
+
 ## 1.0.0
 
 First public release.

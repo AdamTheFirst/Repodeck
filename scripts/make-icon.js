@@ -1,4 +1,4 @@
-// Generates installer/repodeck.ico (PNG-compressed entries, 16-256 px) from a simple
+// Generates installer/repodeck.ico (16-256 px) from a simple
 // vector description, with 4x supersampling. Run: node scripts/make-icon.js
 'use strict';
 const fs = require('node:fs');
@@ -55,7 +55,23 @@ function png(size, rgba) {
 }
 
 const sizes = [16, 24, 32, 48, 64, 128, 256];
-const images = sizes.map((s) => png(s, render(s)));
+const pixels = sizes.map((s) => render(s));
+const pngs = sizes.map((s, i) => png(s, pixels[i]));
+// Inside an .exe, Windows only reads the small sizes when they are plain bitmaps; a compressed
+// picture is fine for 256 only. Otherwise the file shows a blank default icon in Explorer and browsers.
+function bmp(size, rgba) {
+  const head = Buffer.alloc(40);
+  head.writeUInt32LE(40, 0); head.writeInt32LE(size, 4); head.writeInt32LE(size * 2, 8); head.writeUInt16LE(1, 12); head.writeUInt16LE(32, 14);
+  head.writeUInt32LE(size * size * 4, 20);
+  const xor = Buffer.alloc(size * size * 4);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const src = ((size - 1 - y) * size + x) * 4; const dst = (y * size + x) * 4; // bottom row first, blue-green-red-alpha
+    xor[dst] = rgba[src + 2]; xor[dst + 1] = rgba[src + 1]; xor[dst + 2] = rgba[src]; xor[dst + 3] = rgba[src + 3];
+  }
+  const maskRow = Math.ceil(size / 32) * 4;
+  return Buffer.concat([head, xor, Buffer.alloc(maskRow * size)]);
+}
+const images = sizes.map((s, i) => (s >= 256 ? pngs[i] : bmp(s, pixels[i])));
 const header = Buffer.alloc(6); header.writeUInt16LE(0, 0); header.writeUInt16LE(1, 2); header.writeUInt16LE(sizes.length, 4);
 const dir = Buffer.alloc(16 * sizes.length);
 let offset = 6 + dir.length;
@@ -67,6 +83,6 @@ sizes.forEach((s, i) => {
 });
 const outFile = path.join(__dirname, '..', 'installer', 'repodeck.ico');
 fs.writeFileSync(outFile, Buffer.concat([header, dir, ...images]));
-fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-32.png'), images[2]);
-fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-256.png'), images[6]);
+fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-32.png'), pngs[2]);
+fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-256.png'), pngs[6]);
 console.log(`Wrote ${outFile}`);

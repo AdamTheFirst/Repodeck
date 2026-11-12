@@ -1,7 +1,7 @@
 name: Release
 # Push a tag such as v1.0.0 and this builds Setup and publishes it on the Releases page.
 # The newest Setup is then always at
-#   https://github.com/<owner>/<repository>/releases/latest/download/repodeck-setup.exe
+#   https://github.com/<owner>/<repository>/releases/latest/download/RepodeckSetup.exe
 on:
   push:
     tags: ['v*']
@@ -38,13 +38,13 @@ jobs:
       - name: Add a fixed file name and checksums
         shell: pwsh
         run: |
-          $setup = (Get-ChildItem dist/repodeck-setup-*.exe)[0]
-          Copy-Item $setup.FullName dist/repodeck-setup.exe
-          $lines = Get-ChildItem dist/repodeck-setup*.exe | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" }
+          $setup = (Get-ChildItem dist/RepodeckSetup-*.exe)[0]
+          Copy-Item $setup.FullName dist/RepodeckSetup.exe
+          $lines = Get-ChildItem dist/RepodeckSetup*.exe | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" }
           Set-Content dist/SHA256SUMS.txt $lines
           Get-Content dist/SHA256SUMS.txt
       - name: Publish release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" (Get-ChildItem dist/repodeck-setup*.exe).FullName dist/SHA256SUMS.txt --title "Repodeck ${{ github.ref_name }}" --generate-notes
+        run: gh release create "${{ github.ref_name }}" (Get-ChildItem dist/RepodeckSetup*.exe).FullName dist/SHA256SUMS.txt --title "Repodeck ${{ github.ref_name }}" --generate-notes

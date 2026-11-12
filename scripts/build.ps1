@@ -1,7 +1,7 @@
 <#
   Builds the release files into dist\:
     Repodeck.exe                  launcher (no console window)
-    repodeck-setup-<version>.exe  GUI installer with Install, Repair and Uninstall
+    RepodeckSetup-<version>.exe  GUI installer with Install, Repair and Uninstall
 
   Uses the C# compiler that ships with Windows (.NET Framework 4.x), so there is nothing to install
   to build, and the resulting exes run on a clean Windows 10/11.
@@ -70,7 +70,7 @@ $zip = Join-Path $dist 'payload.zip'
 # 3. setup
 $buildInfo = Join-Path $dist 'BuildInfo.cs'
 Set-Content -Path $buildInfo -Encoding UTF8 -Value "static class BuildInfo { public const string Version = `"$version`"; }"
-$setup = Join-Path $dist "repodeck-setup-$version.exe"
+$setup = Join-Path $dist "RepodeckSetup-$version.exe"
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/resource:$zip,payload.zip" "/resource:$(Join-Path $root 'ui\icon-256.png'),logo.png" "/out:$setup" `
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
   (Join-Path $root 'installer\src\Setup.cs') $buildInfo
