@@ -144,6 +144,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the ground rules.
 - Hunk and line staging is not available for untracked or binary files.
 - When run from source instead of installed, notifications appear under "Windows PowerShell".
 
+## Code signing policy
+
+Release files are built by GitHub Actions from the source in this repository ([release workflow](.github/workflows/release.yml)); nothing is built or signed on a personal computer. Signed releases, once available: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- **Committers and reviewers:** [AdamTheFirst](https://github.com/AdamTheFirst), the owner of this repository. Changes from anyone else arrive as pull requests and are reviewed before they are merged.
+- **Approvers:** [AdamTheFirst](https://github.com/AdamTheFirst). Every signing request is approved by hand.
+
+**Privacy.** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Repodeck talks to GitHub only through the `git` and `gh` programs on your computer, as the account you signed in with, and has no telemetry.
+
 ## License
 
 [MIT](LICENSE)

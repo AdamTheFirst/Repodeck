@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Both exe files carry the product name and version (Properties, Details)
+- The release workflow can code-sign the app and Setup through SignPath once the project is accepted there
+
 ## 1.0.1
 
 - Setup is now named `RepodeckSetup.exe`

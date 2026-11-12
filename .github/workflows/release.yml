@@ -2,6 +2,11 @@ name: Release
 # Push a tag such as v1.0.0 and this builds Setup and publishes it on the Releases page.
 # The newest Setup is then always at
 #   https://github.com/<owner>/<repository>/releases/latest/download/RepodeckSetup.exe
+#
+# Code signing (SignPath) runs only when the repository variable SIGNPATH_ORGANIZATION_ID is set.
+# It needs: variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_POLICY_SLUG and the
+# secret SIGNPATH_API_TOKEN. Each signing request is approved by hand in SignPath before it completes.
+# The app is signed first, then Setup is built around the signed app and signed too.
 on:
   push:
     tags: ['v*']
@@ -14,6 +19,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+      actions: read
+    env:
+      SIGN: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,9 +40,63 @@ jobs:
           git config --global user.email "ci@example.com"
           git config --global init.defaultBranch main
       - run: npm test
-      - name: Build Setup
+      - name: Build
         shell: powershell
         run: ./scripts/build.ps1
+
+      # ---- signing, step 1: the app
+      - name: Upload the unsigned app
+        if: env.SIGN == 'true'
+        id: unsigned-app
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-app
+          path: dist/Repodeck.exe
+      - name: Sign the app
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: app
+          github-artifact-id: ${{ steps.unsigned-app.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed/app
+      - name: Build Setup around the signed app
+        if: env.SIGN == 'true'
+        shell: powershell
+        run: ./scripts/build.ps1 -SignedApp signed/app/Repodeck.exe
+
+      # ---- signing, step 2: Setup
+      - name: Upload the unsigned Setup
+        if: env.SIGN == 'true'
+        id: unsigned-setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-setup
+          path: dist/RepodeckSetup-*.exe
+      - name: Sign Setup
+        if: env.SIGN == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: setup
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed/setup
+      - name: Use the signed Setup
+        if: env.SIGN == 'true'
+        shell: pwsh
+        run: |
+          $signed = (Get-ChildItem signed/setup/RepodeckSetup-*.exe)[0]
+          if ((Get-AuthenticodeSignature $signed.FullName).Status -ne 'Valid') { throw 'The signed Setup does not carry a valid signature.' }
+          Copy-Item $signed.FullName dist/ -Force
+
       - name: Add a fixed file name and checksums
         shell: pwsh
         run: |

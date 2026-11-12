@@ -6,8 +6,14 @@
   Uses the C# compiler that ships with Windows (.NET Framework 4.x), so there is nothing to install
   to build, and the resulting exes run on a clean Windows 10/11.
   Works in Windows PowerShell 5.1 and PowerShell 7:   powershell -File scripts\build.ps1
+
+  -SignedApp <file>  Put this already code-signed Repodeck.exe inside Setup instead of compiling one.
+                     The release workflow signs the app first, then builds Setup around it.
+                     The file must be outside dist\, which is emptied at the start.
 #>
+param([string]$SignedApp)
 $ErrorActionPreference = 'Stop'
+if ($SignedApp) { $SignedApp = (Resolve-Path $SignedApp).Path }
 $root = Split-Path -Parent $PSScriptRoot
 $dist = Join-Path $root 'dist'
 $stage = Join-Path $dist 'stage'
@@ -52,11 +58,33 @@ if (-not (Test-Path (Join-Path $wv 'Microsoft.Web.WebView2.Core.dll'))) {
   Remove-Item -Recurse -Force $tmp
 }
 
+# Product name and version inside each exe: shown under Properties > Details, and checked when the files are code-signed.
+function New-AssemblyInfo([string]$file, [string]$title) {
+  Set-Content -Path $file -Encoding UTF8 -Value @(
+    'using System.Reflection;',
+    "[assembly: AssemblyTitle(`"$title`")]",
+    '[assembly: AssemblyProduct("Repodeck")]',
+    '[assembly: AssemblyCompany("Repodeck")]',
+    '[assembly: AssemblyCopyright("MIT License")]',
+    "[assembly: AssemblyVersion(`"$version.0`")]",
+    "[assembly: AssemblyFileVersion(`"$version.0`")]",
+    "[assembly: AssemblyInformationalVersion(`"$version`")]")
+}
+$appInfo = Join-Path $dist 'AppInfo.cs'
+$setupInfo = Join-Path $dist 'SetupInfo.cs'
+New-AssemblyInfo $appInfo 'Repodeck'
+New-AssemblyInfo $setupInfo 'Repodeck Setup'
+
 # 1. launcher
-& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/out:$stage\Repodeck.exe" `
-  /r:System.Windows.Forms.dll /r:System.Drawing.dll "/r:$wv\Microsoft.Web.WebView2.Core.dll" "/r:$wv\Microsoft.Web.WebView2.WinForms.dll" `
-  (Join-Path $root 'installer\src\Launcher.cs') (Join-Path $root 'installer\src\Window.cs')
-if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
+if ($SignedApp) {
+  Write-Host "Using the signed app $SignedApp"
+  Copy-Item $SignedApp (Join-Path $stage 'Repodeck.exe')
+} else {
+  & $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/out:$stage\Repodeck.exe" `
+    /r:System.Windows.Forms.dll /r:System.Drawing.dll "/r:$wv\Microsoft.Web.WebView2.Core.dll" "/r:$wv\Microsoft.Web.WebView2.WinForms.dll" `
+    (Join-Path $root 'installer\src\Launcher.cs') (Join-Path $root 'installer\src\Window.cs') $appInfo
+  if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
+}
 Copy-Item -Recurse (Join-Path $wv '*') $stage
 
 # 2. payload
@@ -73,11 +101,11 @@ Set-Content -Path $buildInfo -Encoding UTF8 -Value "static class BuildInfo { pub
 $setup = Join-Path $dist "RepodeckSetup-$version.exe"
 & $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/resource:$zip,payload.zip" "/resource:$(Join-Path $root 'ui\icon-256.png'),logo.png" "/out:$setup" `
   /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll `
-  (Join-Path $root 'installer\src\Setup.cs') $buildInfo
+  (Join-Path $root 'installer\src\Setup.cs') $buildInfo $setupInfo
 if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }
 
 # dist\ is also a runnable copy of the launcher and window, used when running from source
 Copy-Item (Join-Path $stage 'Repodeck.exe') $dist
 Copy-Item -Recurse (Join-Path $wv '*') $dist
-Remove-Item -Recurse -Force $stage, $zip, $buildInfo
+Remove-Item -Recurse -Force $stage, $zip, $buildInfo, $appInfo, $setupInfo
 Get-ChildItem $dist | ForEach-Object { '{0,-36} {1,8:N0} KB' -f $_.Name, ($_.Length / 1KB) }
