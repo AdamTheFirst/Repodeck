@@ -331,6 +331,7 @@ const H = {
     return { path: dest };
   },
   'account.list': async () => {
+    await state.ensureAccount(); // the open account must be decided before anything is listed
     const r = await require('./accounts').list();
     const cfg = config.get();
     return { ...r, current: cfg.currentAccount, accounts: r.accounts.map((acc) => ({ ...acc, current: acc.login === cfg.currentAccount, folders: (cfg.accountRoots[acc.login] || []).length })) };

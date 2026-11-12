@@ -130,6 +130,7 @@ document.addEventListener('keydown', (e) => {
 // ---------- boot ----------
 async function boot() {
   try {
+    await loadAccounts(); // also makes the server pick the open account, so settings below are that account's
     store.config = await rpc('config.get');
   } catch (e) {
     mount(main, h('div', { class: 'empty' }, h('h3', null, 'Cannot reach git-helper'), h('div', null, e.message)));
@@ -164,7 +165,6 @@ async function boot() {
   onConnection((ok) => { store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
   subscribe('config', () => { applyTheme(); renderTopbar(); });
   subscribe('accounts', renderTopbar);
-  loadAccounts();
   connect();
   rpc('app.diagnostics').then((d) => {
     const missing = [['Git', d.git], ['GitHub CLI', d.gh]].filter(([, v]) => /not available/.test(v)).map(([n]) => n);
