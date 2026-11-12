@@ -2,7 +2,7 @@
 
 ## How Repodeck is exposed
 
-Repodeck runs a small HTTP server on your own machine so its window (a Microsoft Edge app window) can talk to it.
+Repodeck runs a small HTTP server on your own machine so its window can talk to it. The window is a WebView2 view that only ever loads that local address: links to other sites open in your default browser, and it has no browser profile, sign-in, sync or extensions.
 
 - It listens on `127.0.0.1` only. Other machines on your network cannot reach it.
 - Every request must carry a random session token created at each start. The token is embedded in the page served to the app window and is never written anywhere other web pages can read.

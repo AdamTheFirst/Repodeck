@@ -24,9 +24,40 @@ New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Write-Host "Building Repodeck $version"
 
+# 0. Microsoft's WebView2 SDK (the app window). Downloaded once from nuget.org, pinned by version and hash.
+$wvVersion = '1.0.4314.35'
+$wvHash = '90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4'
+$wv = Join-Path $root "installer\vendor\webview2-$wvVersion"
+if (-not (Test-Path (Join-Path $wv 'Microsoft.Web.WebView2.Core.dll'))) {
+  $tmp = Join-Path $root 'installer\vendor\dl'
+  New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+  $pkg = Join-Path $tmp 'webview2.nupkg'
+  if (-not (Test-Path $pkg)) {
+    Write-Host "Downloading Microsoft.Web.WebView2 $wvVersion"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    (New-Object Net.WebClient).DownloadFile("https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$wvVersion/microsoft.web.webview2.$wvVersion.nupkg", $pkg)
+  }
+  if ((Get-FileHash $pkg -Algorithm SHA256).Hash.ToLower() -ne $wvHash) { throw 'The WebView2 package does not match the pinned hash.' }
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  $x = Join-Path $tmp 'x'
+  if (Test-Path $x) { Remove-Item -Recurse -Force $x }
+  [System.IO.Compression.ZipFile]::ExtractToDirectory($pkg, $x)
+  New-Item -ItemType Directory -Force -Path $wv | Out-Null
+  Copy-Item (Join-Path $x 'lib\net462\Microsoft.Web.WebView2.Core.dll'), (Join-Path $x 'lib\net462\Microsoft.Web.WebView2.WinForms.dll') $wv
+  Copy-Item (Join-Path $x 'LICENSE.txt') (Join-Path $wv 'WebView2-LICENSE.txt')
+  foreach ($a in 'win-x64', 'win-x86', 'win-arm64') {
+    New-Item -ItemType Directory -Force -Path (Join-Path $wv "runtimes\$a\native") | Out-Null
+    Copy-Item (Join-Path $x "runtimes\$a\native\WebView2Loader.dll") (Join-Path $wv "runtimes\$a\native")
+  }
+  Remove-Item -Recurse -Force $tmp
+}
+
 # 1. launcher
-& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/out:$stage\Repodeck.exe" /r:System.Windows.Forms.dll (Join-Path $root 'installer\src\Launcher.cs')
+& $csc /nologo /target:winexe /optimize+ /platform:anycpu "/win32icon:$icon" "/win32manifest:$manifest" "/out:$stage\Repodeck.exe" `
+  /r:System.Windows.Forms.dll /r:System.Drawing.dll "/r:$wv\Microsoft.Web.WebView2.Core.dll" "/r:$wv\Microsoft.Web.WebView2.WinForms.dll" `
+  (Join-Path $root 'installer\src\Launcher.cs') (Join-Path $root 'installer\src\Window.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
+Copy-Item -Recurse (Join-Path $wv '*') $stage
 
 # 2. payload
 foreach ($d in 'server', 'ui') { Copy-Item -Recurse (Join-Path $root $d) (Join-Path $stage $d) }
@@ -45,6 +76,8 @@ $setup = Join-Path $dist "repodeck-setup-$version.exe"
   (Join-Path $root 'installer\src\Setup.cs') $buildInfo
 if ($LASTEXITCODE -ne 0) { throw 'Setup build failed.' }
 
+# dist\ is also a runnable copy of the launcher and window, used when running from source
 Copy-Item (Join-Path $stage 'Repodeck.exe') $dist
+Copy-Item -Recurse (Join-Path $wv '*') $dist
 Remove-Item -Recurse -Force $stage, $zip, $buildInfo
 Get-ChildItem $dist | ForEach-Object { '{0,-36} {1,8:N0} KB' -f $_.Name, ($_.Length / 1KB) }

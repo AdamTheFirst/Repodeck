@@ -10,10 +10,24 @@ import { accountChip, loadAccounts } from './account.js';
 const main = document.getElementById('main');
 let disposeView = null;
 
+// Messages to the app's own window (Repodeck.exe). In a browser tab there is nobody to hear them.
+export function host(msg) { try { if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(msg); } catch { /* not in the app window */ } }
+// The window's title bar takes the colour of the top bar.
+function tellHostTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const probe = document.createElement('i');
+  probe.style.cssText = 'position:absolute;visibility:hidden;background:var(--panel)';
+  document.body.append(probe);
+  const m = /(d+)D+(d+)D+(d+)/.exec(getComputedStyle(probe).backgroundColor) || [];
+  probe.remove();
+  if (m.length) host(`theme ${cs.colorScheme.includes('dark') ? 'dark' : 'light'} ${m[1]} ${m[2]} ${m[3]}`);
+}
+
 function applyTheme() {
   const t = store.config ? store.config.theme : 'system';
   if (t === 'system') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
+  tellHostTheme();
 }
 
 // ---------- top bar ----------
@@ -207,7 +221,7 @@ async function boot() {
   onConnection((ok) => { clearTimeout(offlineTimer); if (ok) offline(false); else offlineTimer = setTimeout(() => offline(true), 4000);
     store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
   subscribe('config', () => { applyTheme(); applyTitle(); renderTopbar(); });
-  on('focus', () => { window.focus(); });
+  on('focus', () => { window.focus(); host('focus'); });
   subscribe('accounts', renderTopbar);
   connect();
   rpc('app.diagnostics').then((d) => {

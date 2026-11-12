@@ -461,6 +461,24 @@ class SetupForm : Form
                 catch { /* not running */ }
             }
         }
+        CloseAppWindows();
+    }
+
+    /// The app's windows are Repodeck.exe processes: they keep the program files open, so they must be gone before files are replaced.
+    void CloseAppWindows()
+    {
+        foreach (var p in Process.GetProcessesByName("Repodeck"))
+        {
+            try
+            {
+                string file = p.MainModule.FileName;
+                if (!file.StartsWith(installDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!p.HasExited && p.MainWindowHandle != IntPtr.Zero) { p.CloseMainWindow(); p.WaitForExit(2500); }
+                if (!p.HasExited) { p.Kill(); p.WaitForExit(2500); }
+                Log("Closed a Repodeck window.");
+            }
+            catch { /* already gone, or not ours */ }
+        }
     }
 
     /// The app used to be called something else: remove that install so only one remains. Settings are migrated by the app itself.

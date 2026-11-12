@@ -450,7 +450,7 @@ function app(el) {
       number('port', 'Local port', 'Takes effect after a restart', 1025)),
     sub('Stop'),
     card(row('Quit Repodeck', 'Stops the background process for this account', btn('Quit', async () => {
-      if (await confirmDanger({ title: 'Quit Repodeck?', message: 'Stops the background process. Start it again from the Start menu.', confirmLabel: 'Quit', danger: false })) { await rpc('app.quit'); mount(document.body, h('div', { class: 'empty' }, 'Repodeck has stopped. You can close this window.')); }
+      if (await confirmDanger({ title: 'Quit Repodeck?', message: 'Stops the background process. Start it again from the Start menu.', confirmLabel: 'Quit', danger: false })) { await rpc('app.quit'); mount(document.body, h('div', { class: 'empty' }, 'Repodeck has stopped. You can close this window.')); try { window.chrome.webview.postMessage('close'); } catch { /* browser tab: stays open */ } }
     }, { cls: 'small danger' }))));
 }
 

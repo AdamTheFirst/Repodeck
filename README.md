@@ -2,7 +2,7 @@
 
 A small Windows app for people who work in many git repositories at once. It shows every repository under your folders in one tree with the ones that need attention highlighted, and gives you source control, a commit graph, pull requests and GitHub Actions status in one window. It is built for working from a terminal, without an IDE.
 
-It runs locally: a tiny Node.js server on `127.0.0.1` drives the `git` and `gh` (GitHub CLI) programs you already have, and the interface opens as a Microsoft Edge app window. It has no other dependencies and no telemetry.
+It runs locally: a tiny Node.js server on `127.0.0.1` drives the `git` and `gh` (GitHub CLI) programs you already have, and the interface opens in its own window, drawn with WebView2 (the web engine included in Windows 11; on a computer without it, an Edge app window is used instead). It has no other runtime dependencies and no telemetry.
 
 ## What it does
 

@@ -1,4 +1,5 @@
 // Repodeck.exe: starts the app without a console window (or brings up the running copy).
+// The same exe is the app window itself when the server starts it with --window (see Window.cs).
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,6 +15,14 @@ static class Launcher
     static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "--brand") return Brand.Run();
+        if (args.Length > 1 && args[0] == "--window")
+        {
+            // A missing WebView2 file or runtime must not show a crash dialog: report it and let the server fall back.
+            try { return WindowHost.Run(args[1], args.Length > 3 && args[2] == "--account" ? args[3] : null); }
+            catch (Exception) { return 3; }
+        }
+        // Started by the user: the window this leads to (new or already open) may come to the front.
+        try { AllowSetForegroundWindow(-1); } catch { }
         string root = AppDomain.CurrentDomain.BaseDirectory;
         string main = Path.Combine(root, "server", "main.js");
         if (!File.Exists(main))
@@ -44,6 +53,8 @@ static class Launcher
             return 1;
         }
     }
+
+    [DllImport("user32.dll")] static extern bool AllowSetForegroundWindow(int pid);
 
     // A shortcut's process can have a PATH from before Git / Node were installed: rebuild it from the registry.
     static string FreshPath()
@@ -148,7 +159,7 @@ static class Brand
         return found;
     }
 
-    static bool Apply(IntPtr hwnd, string exe)
+    public static bool Apply(IntPtr hwnd, string exe)
     {
         try
         {
