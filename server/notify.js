@@ -3,9 +3,9 @@
 const { run } = require('./proc');
 const log = require('./log');
 
-// Setup registers "Repodeck.App" so notifications show the app's own name and icon. When running
+// Setup registers "Repodeck.Desktop" so notifications show the app's own name and icon. When running
 // from source without Setup, fall back to PowerShell's identity, which exists on every Windows.
-const OWN_AUMID = 'Repodeck.App';
+const OWN_AUMID = 'Repodeck.Desktop';
 const PS_AUMID = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe';
 let aumid = null;
 async function appId() {

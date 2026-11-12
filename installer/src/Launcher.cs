@@ -9,6 +9,18 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
+// How Windows knows the app: taskbar grouping, pinning and notifications all hang on this name.
+// An installed copy and a build in a source checkout use different names, so that trying a development
+// build can never change what the installed app's taskbar button or notifications start.
+static class AppIdentity
+{
+    public const string Installed = "Repodeck.Desktop";
+    public static string Id
+    {
+        get { return File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "main.js")) ? Installed : "Repodeck.Dev"; }
+    }
+}
+
 static class Launcher
 {
     [STAThread]
@@ -25,6 +37,12 @@ static class Launcher
         try { AllowSetForegroundWindow(-1); } catch { }
         string root = AppDomain.CurrentDomain.BaseDirectory;
         string main = Path.Combine(root, "server", "main.js");
+        if (!File.Exists(main))
+        {
+            // A build inside a source checkout (dist\Repodeck.exe): the server is one folder up.
+            string up = Path.GetFullPath(Path.Combine(root, ".."));
+            if (File.Exists(Path.Combine(up, "server", "main.js"))) { root = up; main = Path.Combine(up, "server", "main.js"); }
+        }
         if (!File.Exists(main))
         {
             MessageBox.Show("Repodeck is not installed correctly: server\\main.js is missing next to Repodeck.exe.\n\nRun Setup and choose Repair.", "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -116,7 +134,6 @@ static class Brand
     [DllImport("shell32.dll")] static extern int SHGetPropertyStoreForWindow(IntPtr hwnd, ref Guid iid, out IPropertyStore store);
 
     static readonly Guid AppUserModel = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
-    const string Id = "Repodeck.App"; // the same identity Setup registers for notifications
 
     public static int Run()
     {
@@ -166,7 +183,7 @@ static class Brand
             Guid iid = typeof(IPropertyStore).GUID;
             IPropertyStore store;
             if (SHGetPropertyStoreForWindow(hwnd, ref iid, out store) != 0 || store == null) return false;
-            bool ok = Set(store, 5, Id)                      // System.AppUserModel.ID
+            bool ok = Set(store, 5, AppIdentity.Id)                     // System.AppUserModel.ID
                 & Set(store, 2, "\"" + exe + "\"")            // RelaunchCommand
                 & Set(store, 4, "Repodeck")                  // RelaunchDisplayNameResource
                 & Set(store, 3, exe + ",0");                 // RelaunchIconResource

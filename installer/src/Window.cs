@@ -16,8 +16,6 @@ using Microsoft.Web.WebView2.WinForms;
 
 static class WindowHost
 {
-    public const string AppId = "Repodeck.App"; // the identity Setup registers for notifications
-
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)] static extern int SetCurrentProcessExplicitAppUserModelID(string id);
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -27,7 +25,7 @@ static class WindowHost
         string version = null;
         try { version = CoreWebView2Environment.GetAvailableBrowserVersionString(); } catch { }
         if (string.IsNullOrEmpty(version)) return 3;
-        SetCurrentProcessExplicitAppUserModelID(AppId);
+        SetCurrentProcessExplicitAppUserModelID(AppIdentity.Id);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         var w = new MainWindow(url, account);

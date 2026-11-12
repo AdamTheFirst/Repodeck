@@ -8,6 +8,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Net;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -337,7 +338,8 @@ class SetupForm : Form
             k.SetValue("EstimatedSize", (int)(DirSize(installDir) / 1024), RegistryValueKind.DWord);
         }
         // Notifications appear under the app's own name and icon instead of "Windows PowerShell".
-        using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\Repodeck.App"))
+        try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { } // name used by earlier builds
+        using (var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\AppUserModelId\" + AppId))
         {
             k.SetValue("DisplayName", AppName);
             k.SetValue("IconUri", Path.Combine(installDir, "ui", "icon-256.png"));
@@ -374,7 +376,7 @@ class SetupForm : Form
         {
             try { if (File.Exists(lnk)) { File.Delete(lnk); Log("Removed " + lnk); } } catch (Exception e) { Log("Could not remove " + lnk + ": " + e.Message); }
         }
-        if (!Portable) { try { Registry.CurrentUser.DeleteSubKeyTree(RegKey, false); } catch { } try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { } }
+        if (!Portable) { try { Registry.CurrentUser.DeleteSubKeyTree(RegKey, false); } catch { } try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\" + AppId, false); } catch { } try { Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\AppUserModelId\Repodeck.App", false); } catch { } }
         if (wipeData) { DeleteDir(dataDir); }
         // Remove everything we can now; this running Setup.exe (if it lives in the folder) is removed right after exit.
         if (Directory.Exists(installDir))
@@ -513,6 +515,39 @@ class SetupForm : Form
         st.InvokeMember("IconLocation", BindingFlags.SetProperty, null, sc, new object[] { target + ",0" });
         st.InvokeMember("Description", BindingFlags.SetProperty, null, sc, new object[] { "Repodeck: repositories, pull requests and GitHub Actions" });
         st.InvokeMember("Save", BindingFlags.InvokeMethod, null, sc, null);
+        try { TagShortcut(lnk); } catch { /* the shortcut still works without it */ }
+    }
+
+    // The same identity as the app window (installer/src/Launcher.cs, AppIdentity). With it on the shortcut,
+    // Windows knows that the window belongs to this shortcut: "Pin to taskbar" pins it, and a click on a
+    // notification starts it.
+    const string AppId = "Repodeck.Desktop";
+
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPropertyStore
+    {
+        int GetCount(out uint count);
+        int GetAt(uint index, out PropertyKey key);
+        int GetValue(ref PropertyKey key, out PropVariant value);
+        int SetValue(ref PropertyKey key, ref PropVariant value);
+        int Commit();
+    }
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    struct PropertyKey { public Guid fmtid; public uint pid; }
+    [StructLayout(LayoutKind.Sequential)]
+    struct PropVariant { public ushort vt; public ushort r1, r2, r3; public IntPtr p; public IntPtr p2; }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    static extern int SHGetPropertyStoreFromParsingName(string path, IntPtr bindCtx, int flags, ref Guid iid, out IPropertyStore store);
+
+    static void TagShortcut(string lnk)
+    {
+        Guid iid = typeof(IPropertyStore).GUID;
+        IPropertyStore store;
+        if (SHGetPropertyStoreFromParsingName(lnk, IntPtr.Zero, 2 /* read and write */, ref iid, out store) != 0 || store == null) return;
+        var key = new PropertyKey { fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), pid = 5 }; // System.AppUserModel.ID
+        var v = new PropVariant { vt = 31, p = Marshal.StringToCoTaskMemUni(AppId) };
+        try { store.SetValue(ref key, ref v); store.Commit(); }
+        finally { Marshal.FreeCoTaskMem(v.p); Marshal.ReleaseComObject(store); }
     }
 
     static void DeleteDir(string dir)
