@@ -17,6 +17,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 - Graph: “Local branches only” in the branch filter, branches listed as Local and Remote, and the author filter is a list of everyone with commits
 - After a fetch the app says where the branch stands: how many commits behind, with a Pull button, or that it is up to date; the repository header shows “behind” and “ahead” counts
 - Its own window instead of a Microsoft Edge app window: own taskbar name and icon, title bar in the app colour, remembered size and position
+- Closing the window hides it to the tray (a setting, on by default); the tray icon opens it again or quits
 - Setup.exe with Install, Repair and Uninstall and a clear finish screen; it never starts the app by itself
 
 ## 0.1.0

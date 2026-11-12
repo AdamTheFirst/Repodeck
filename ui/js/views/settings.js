@@ -448,7 +448,8 @@ function app(el) {
   mount(el, head('Appearance & app'),
     card(
       row('Theme', null, seg(store.config.theme, [['system', 'Follow Windows'], ['light', 'Light'], ['dark', 'Dark']], (v) => save({ theme: v }))),
-      toggle('keepRunningWhenClosed', 'Keep running after the window closes', 'So notifications still arrive. Reopen from the Start menu.'),
+      toggle('closeToTray', 'Close button hides the window to the tray', 'Repodeck keeps running next to the clock. Click its icon to open it again; right-click it to quit.'),
+      toggle('keepRunningWhenClosed', 'Keep running after the window really closes', 'When you quit from the tray, or the tray option is off: notifications still arrive. Reopen from the Start menu.'),
       number('port', 'Local port', 'Takes effect after a restart', 1025)),
     sub('Stop'),
     card(row('Quit Repodeck', 'Stops the background process for this account', btn('Quit', async () => {

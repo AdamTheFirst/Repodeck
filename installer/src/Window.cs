@@ -57,10 +57,16 @@ sealed class MainWindow : Form
     readonly WebView2 web = new WebView2();
     public bool Failed;
     bool shown;
+    bool toTray = true;   // the page says otherwise when the setting is off
+    bool quitting;
+    bool byButton;        // the close request came from the title bar's close button or Alt+F4
+    NotifyIcon tray;
+    readonly string account;
 
     public MainWindow(string url, string account)
     {
         this.url = url;
+        this.account = account;
         origin = Regex.Match(url, @"^http://127\.0\.0\.1:\d+").Value;
         string who = !string.IsNullOrEmpty(account) && Regex.IsMatch(account, "^[A-Za-z0-9-]+$") ? account : "default";
         boundsFile = Path.Combine(WindowHost.DataDir(), "window-" + who + ".txt");
@@ -77,7 +83,14 @@ sealed class MainWindow : Form
         Controls.Add(web);
 
         Load += async (s, e) => { await Start(); };
-        FormClosing += (s, e) => SaveBounds();
+        FormClosing += (s, e) =>
+        {
+            SaveBounds();
+            // The close button hides the window; the app keeps running next to the clock. Quit, Windows
+            // shutting down, or a window that never loaded close it for real.
+            if (toTray && shown && !quitting && byButton) { e.Cancel = true; HideToTray(); return; }
+            if (tray != null) { tray.Visible = false; tray.Dispose(); tray = null; }
+        };
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -133,10 +146,11 @@ sealed class MainWindow : Form
         try { Process.Start(new ProcessStartInfo(u.AbsoluteUri) { UseShellExecute = true }); } catch { }
     }
 
-    // Messages from the page: "theme dark|light r g b", "focus", "close".
+    // Messages from the page: "theme dark|light r g b", "focus", "close", "tray on|off".
     void OnMessage(string m)
     {
-        if (m == "close") { Close(); return; }
+        if (m == "close") { quitting = true; Close(); return; }
+        if (m == "tray on" || m == "tray off") { toTray = m == "tray on"; SyncTray(); return; }
         if (m == "focus") { BringForward(); return; }
         var t = Regex.Match(m, @"^theme (dark|light) (\d{1,3}) (\d{1,3}) (\d{1,3})$");
         if (t.Success)
@@ -164,12 +178,61 @@ sealed class MainWindow : Form
 
     void BringForward()
     {
+        if (!Visible) Show();
         if (IsIconic(Handle)) ShowWindow(Handle, 9); // restore
         // Windows only lets a process take the foreground after input; a tap of Alt counts.
         keybd_event(0x12, 0, 0, UIntPtr.Zero);
         keybd_event(0x12, 0, 2, UIntPtr.Zero);
         SetForegroundWindow(Handle);
         Activate();
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        // Only the close button and Alt+F4 hide to the tray. Task Manager, Setup and Windows shutting
+        // down send a bare close request, and that one always closes for real.
+        if (m.Msg == 0x0112 && ((int)m.WParam.ToInt64() & 0xFFF0) == 0xF060)
+        {
+            byButton = true;
+            try { base.WndProc(ref m); } finally { byButton = false; }
+            return;
+        }
+        base.WndProc(ref m);
+    }
+
+    // ---------- notification area ----------
+    void SyncTray()
+    {
+        if (!toTray)
+        {
+            if (tray != null && Visible) { tray.Visible = false; tray.Dispose(); tray = null; }
+            return;
+        }
+        if (tray != null) return;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Open Repodeck", null, (s, e) => BringForward());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Quit", null, (s, e) => { quitting = true; Close(); });
+        string tip = string.IsNullOrEmpty(account) ? "Repodeck" : "Repodeck · " + account;
+        tray = new NotifyIcon { Icon = Icon, Text = tip.Length > 60 ? tip.Substring(0, 60) : tip, ContextMenuStrip = menu, Visible = true };
+        tray.MouseClick += (s, e) => { if (e.Button == MouseButtons.Left) BringForward(); };
+    }
+
+    void HideToTray()
+    {
+        SyncTray();
+        Hide();
+        // Say once where the window went.
+        try
+        {
+            string seen = Path.Combine(WindowHost.DataDir(), "tray-hint-shown.txt");
+            if (!File.Exists(seen))
+            {
+                File.WriteAllText(seen, "1");
+                tray.ShowBalloonTip(6000, "Repodeck is still running", "Click this icon to open it again. Right-click it to quit. You can change this in Settings.", ToolTipIcon.None);
+            }
+        }
+        catch { }
     }
 
     // ---------- remembered size and position ----------

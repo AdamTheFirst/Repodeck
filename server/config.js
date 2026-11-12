@@ -24,6 +24,7 @@ const DEFAULTS = {
   notifications: true,
   notifySound: false,
   notifyReviewRequests: true,
+  closeToTray: true,           // the window's close button hides it to the notification area
   keepRunningWhenClosed: false,
   editorCommand: 'code',       // program + args; {path} is replaced
   editorArgs: ['{path}'],

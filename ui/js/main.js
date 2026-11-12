@@ -18,10 +18,12 @@ function tellHostTheme() {
   const probe = document.createElement('i');
   probe.style.cssText = 'position:absolute;visibility:hidden;background:var(--panel)';
   document.body.append(probe);
-  const m = /(d+)D+(d+)D+(d+)/.exec(getComputedStyle(probe).backgroundColor) || [];
+  const m = /(\d+)\D+(\d+)\D+(\d+)/.exec(getComputedStyle(probe).backgroundColor) || [];
   probe.remove();
   if (m.length) host(`theme ${cs.colorScheme.includes('dark') ? 'dark' : 'light'} ${m[1]} ${m[2]} ${m[3]}`);
 }
+// Whether the close button hides the window to the notification area or really closes it.
+function tellHostTray() { host(`tray ${store.config && store.config.closeToTray === false ? 'off' : 'on'}`); }
 
 function applyTheme() {
   const t = store.config ? store.config.theme : 'system';
@@ -181,7 +183,7 @@ async function boot() {
     splash(null);
     return;
   }
-  applyTheme(); applyTitle();
+  applyTheme(); applyTitle(); tellHostTray();
   if (store.config._problem) banner({ level: 'error', title: 'Settings problem', body: store.config._problem, timeout: 0 });
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
   splash('Reading your repositories');
@@ -220,7 +222,7 @@ async function boot() {
   };
   onConnection((ok) => { clearTimeout(offlineTimer); if (ok) offline(false); else offlineTimer = setTimeout(() => offline(true), 4000);
     store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
-  subscribe('config', () => { applyTheme(); applyTitle(); renderTopbar(); });
+  subscribe('config', () => { applyTheme(); applyTitle(); tellHostTray(); renderTopbar(); });
   on('focus', () => { window.focus(); host('focus'); });
   subscribe('accounts', renderTopbar);
   connect();
