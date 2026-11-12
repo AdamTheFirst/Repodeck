@@ -241,7 +241,7 @@ async function bulkRun({ op, ids, args = {} }) {
 const H = {
   // ----- app -----
   'app.ping': () => ({ ok: true }),
-  'config.get': () => config.get(),
+  'config.get': () => ({ ...config.get(), _problem: config.problem() }),
   'config.update': async (p) => {
     const before = config.get();
     const cfg = config.update(p.patch);
@@ -542,6 +542,9 @@ const H = {
       const full = (await git.git(r, ['log', '-1', '--format=%b', commits[0].hash], { quiet: true })).stdout.trim();
       body = full;
     }
+    // Branches made from an issue ("123-short-title") link back to it so merging closes the issue.
+    const issue = /^(?:[^/]+\/)?(\d+)[-_]/.exec(sum.branch || '');
+    if (issue && !/\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #\d+/i.test(body)) body = `${body ? `${body}\n\n` : ''}Closes #${issue[1]}`;
     return { base, head: sum.branch, title, body, commits, needsPush: !sum.upstream || sum.ahead > 0, upstream: sum.upstream, ahead: sum.ahead };
   },
   'pr.create': async (p) => {

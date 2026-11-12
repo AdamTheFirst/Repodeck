@@ -112,7 +112,7 @@ function runDetail(view, r, runId) {
     const failed = ['failure', 'timed_out', 'cancelled', 'startup_failure'].includes(run.conclusion);
     const tracked = store.trackers.some((t) => (t.runId === runId || t.runs.some((x) => x.id === runId)) && t.state !== 'done');
     mount(head,
-      iconBtn('chevronRight', 'Back to runs', () => navigate(`#/repo/${r.id}/actions`)),
+      iconBtn('back', 'Back to runs', () => navigate(`#/repo/${r.id}/actions`)),
       statusBadge(run.status, run.conclusion),
       h('div', { class: 'col grow', style: { gap: '0' } }, h('span', { class: 'title ellipsis' }, run.displayTitle),
         h('span', { class: 'muted', style: { fontSize: '12px' } }, `${run.workflowName} #${run.number} · ${run.event} · ${run.headBranch} · ${run.headSha.slice(0, 8)} · ${run.status === 'completed' ? `took ${duration(run.startedAt || run.createdAt, run.updatedAt)}` : `running for ${duration(run.startedAt || run.createdAt)}`}${run.attempt > 1 ? ` · attempt ${run.attempt}` : ''}`)),
@@ -148,7 +148,9 @@ function runDetail(view, r, runId) {
     const lines = text.split('\n').map((l) => {
       const parts = l.split('\t');
       const content = parts.length >= 3 ? parts.slice(2).join('\t') : l;
-      return { step: parts.length >= 3 ? parts[1] : '', text: content.replace(/^﻿?\d{4}-\d\d-\d\dT[\d:.]+Z ?/, '') };
+      const step = parts.length >= 3 && parts[1] !== 'UNKNOWN STEP' ? parts[1] : '';
+      // eslint-disable-next-line no-control-regex
+      return { step, text: content.replace(/^﻿?\d{4}-\d\d-\d\dT[\d:.]+Z ?/, '').replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '') };
     });
     const errIdx = [];
     lines.forEach((l, i) => { if (/##\[error\]|^Error[: ]|\bERROR\b|FAILED|Traceback|npm ERR!|error TS\d+|AssertionError|exit code [1-9]/.test(l.text)) errIdx.push(i); });

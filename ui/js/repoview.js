@@ -36,9 +36,9 @@ export function renderRepo(main, id, tab, sub) {
     const b = boardFor(r);
     const bs = boardState(b);
     mount(head,
-      h('div', { class: 'col', style: { gap: '0' } },
-        h('div', { class: 'row' }, h('span', { class: 'title' }, r.label), r.slug && r.slug.github ? h('a', { class: 'faint', style: { fontSize: '12px' }, onclick: () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}` }) }, `${r.slug.owner}/${r.slug.repo}`) : null),
-        h('span', { class: 'faint', style: { fontSize: '11px' } }, r.path)),
+      h('div', { class: 'col', style: { gap: '0', minWidth: '120px', flex: '0 1 auto', overflow: 'hidden' } },
+        h('div', { class: 'row' }, h('span', { class: 'title ellipsis' }, r.label), r.slug && r.slug.github ? h('a', { class: 'faint ellipsis', style: { fontSize: '12px' }, onclick: () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}` }) }, `${r.slug.owner}/${r.slug.repo}`) : null),
+        h('span', { class: 'faint ellipsis', style: { fontSize: '11px' }, title: r.path }, r.path)),
       h('span', { class: 'sep' }),
       h('button', { class: 'btn', title: 'Switch branch', onclick: (e) => branchMenu(e.currentTarget) },
         icon('branch'), s.detached ? `detached @ ${(s.oid || '').slice(0, 8)}` : s.branch || '(no commits)', icon('chevronDown', 'sm')),

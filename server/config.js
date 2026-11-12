@@ -1,5 +1,6 @@
 'use strict';
-const { paths, writeJsonAtomic, readJson } = require('./paths');
+const fs = require('node:fs');
+const { paths, writeJsonAtomic } = require('./paths');
 
 const DEFAULTS = {
   version: 1,
@@ -36,11 +37,28 @@ const DEFAULTS = {
 
 let current = null;
 
+let loadProblem = null;
+
 function load() {
-  const saved = readJson(paths.config, {});
+  let saved = {};
+  let raw = null;
+  try { raw = fs.readFileSync(paths.config, 'utf8'); } catch {}
+  if (raw != null) {
+    try {
+      saved = JSON.parse(raw.replace(/^﻿/, ''));
+      if (!saved || typeof saved !== 'object' || Array.isArray(saved)) throw new Error('not an object');
+    } catch (e) {
+      // Keep the unreadable file instead of silently overwriting it on the next save.
+      const keep = `${paths.config}.unreadable-${Date.now()}`;
+      try { fs.copyFileSync(paths.config, keep); } catch {}
+      loadProblem = `Settings file could not be read (${e.message}). Defaults are in use; the old file was kept as ${keep}.`;
+      saved = {};
+    }
+  }
   current = { ...DEFAULTS, ...saved };
   return current;
 }
+function problem() { return loadProblem; }
 
 function get() { return current || load(); }
 
@@ -73,4 +91,4 @@ function update(patch) {
   return cfg;
 }
 
-module.exports = { get, load, update, DEFAULTS };
+module.exports = { get, load, update, problem, DEFAULTS };

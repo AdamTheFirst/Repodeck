@@ -50,6 +50,7 @@ const ICONS = {
   check: 'M5 12l5 5 9-10',
   x: 'M6 6l12 12M18 6 6 18',
   chevronRight: 'M9 6l6 6-6 6',
+  back: 'M19 12H5m0 0 6-6m-6 6 6 6',
   chevronDown: 'M6 9l6 6 6-6',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
@@ -371,9 +372,9 @@ function inline(text) {
     if (m[1]) frag.append(h('code', null, m[1].slice(1, -1)));
     else if (m[2]) { if (/^https:\/\//.test(m[4])) frag.append(h('img', { src: m[4], alt: m[3], loading: 'lazy', referrerpolicy: 'no-referrer' })); else frag.append(m[3]); }
     else if (m[5]) frag.append(link(m[7], m[6]));
-    else if (m[8]) frag.append(h('strong', null, m[8].slice(2, -2)));
-    else if (m[9]) frag.append(h('em', null, m[9].slice(1, -1)));
-    else if (m[10]) frag.append(h('s', null, m[10].slice(2, -2)));
+    else if (m[8]) frag.append(h('strong', null, inline(m[8].slice(2, -2))));
+    else if (m[9]) frag.append(h('em', null, inline(m[9].slice(1, -1))));
+    else if (m[10]) frag.append(h('s', null, inline(m[10].slice(2, -2))));
     else if (m[11]) frag.append(link(m[11], m[11]));
     last = rx.lastIndex;
   }

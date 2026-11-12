@@ -54,7 +54,29 @@ export function render(view, r) {
       h('label', { class: 'check', title: 'Skip pre-commit and commit-msg hooks (git commit --no-verify)' }, noVerify, 'Skip hooks')),
     h('div', { class: 'btngroup', style: { display: 'flex' } }, commitBtn, commitMore));
 
-  const listEl = h('div', { class: 'pane-scroll' });
+  const listEl = h('div', { class: 'pane-scroll', tabindex: '0', title: 'Keys: ↑/↓ select, S stage/unstage, Delete discard, E open in editor' });
+  listEl.addEventListener('keydown', (e) => {
+    if (!data || e.target !== listEl) return;
+    const flat = GROUPS.filter(([g]) => !collapsedGroups.has(g)).flatMap(([g]) => data[g].map((f) => ({ g, f })));
+    if (!flat.length) return;
+    const i = selected ? flat.findIndex((x) => x.g === selected.group && x.f.path === selected.path) : -1;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const n = flat[Math.max(0, Math.min(flat.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))];
+      select(n.g, n.f);
+      const row = listEl.querySelector('.file-row.selected'); if (row) row.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    if (i < 0) return;
+    const { g, f } = flat[i];
+    if (e.key.toLowerCase() === 's' && !e.ctrlKey) {
+      e.preventDefault();
+      if (g === 'staged') act(() => rpc('repo.unstage', { id: r.id, files: [f.path] }));
+      else if (g === 'conflicted') markResolved(f);
+      else act(() => rpc('repo.stage', { id: r.id, files: [f.path] }));
+    } else if (e.key === 'Delete' && g !== 'staged' && g !== 'conflicted') { e.preventDefault(); discardFiles(g, [f]); }
+    else if (e.key.toLowerCase() === 'e') { e.preventDefault(); act(() => rpc('open.editor', { id: r.id, file: f.path })); }
+  });
   const listHead = h('div', { class: 'row', style: { padding: '6px 10px', borderBottom: '1px solid var(--border)' } });
   const left = h('div', { class: 'left' }, commitBox, listHead, listEl);
   const right = h('div', { class: 'right' });
@@ -66,8 +88,12 @@ export function render(view, r) {
     try {
       data = await rpc('repo.changes', { id: r.id });
       if (disposed) return;
+      if (selected && !findFile(selected)) {
+        // the file moved between groups (e.g. it was just staged): keep following it
+        const alt = GROUPS.map(([g]) => g).find((g) => data[g].some((f) => f.path === selected.path));
+        selected = alt ? { ...selected, group: alt } : null;
+      }
       renderList();
-      if (selected && !findFile(selected)) { selected = null; }
       renderRight();
     } catch (e) {
       mount(listEl, h('div', { class: 'errbox', style: { margin: '10px' } }, e.message));
@@ -187,6 +213,7 @@ export function render(view, r) {
     prefs.set(`sel.${r.id}`, selected);
     renderList();
     renderRight();
+    if (document.activeElement === document.body || document.activeElement.closest('.file-row')) listEl.focus({ preventScroll: true });
   }
 
   // ---------- actions ----------

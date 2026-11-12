@@ -7,6 +7,11 @@ import { navigate } from '../router.js';
 
 export function render(main) {
   let filter = prefs.get('boardFilter', 'all');
+  let sort = prefs.get('boardSort', 'name');
+  const order = (a, b) => {
+    if (sort === 'recent') return Date.parse((b.b && (b.b.committedDate || '')) || 0) - Date.parse((a.b && (a.b.committedDate || '')) || 0);
+    return a.r.label.localeCompare(b.r.label);
+  };
   let text = '';
   const page = h('div', { class: 'page' });
   mount(main, page);
@@ -47,6 +52,8 @@ export function render(main) {
         h('div', { class: 'pill-tabs' }, [['all', `All (${entries.length})`], ['attention', `Needs attention (${counts.failure + counts.running})`], ['failure', `Failing (${counts.failure})`], ['running', `Running (${counts.running})`]]
           .map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => { filter = k; prefs.set('boardFilter', k); draw(); } }, l))),
         searchIn,
+        h('select', { title: 'Sort', onchange: (e) => { sort = e.target.value; prefs.set('boardSort', sort); draw(); } },
+          [['name', 'Sort by name'], ['recent', 'Most recent commit first']].map(([v, l]) => h('option', { value: v, selected: sort === v }, l))),
         btn(refreshing ? 'Refreshing…' : 'Refresh', async () => { refreshing = true; draw(); await act(() => rpc('board.refresh')); await rpc('trackers.refresh').catch(() => {}); refreshing = false; draw(); }, { cls: 'small', iconName: 'refresh', disabled: refreshing })),
 
       h('div', { class: 'section-title' }, h('h3', null, 'Tracked runs'), h('span', { class: 'faint' }, 'Pushes and merges made in git-helper (and new commits on default branches) are followed here until their workflows finish.'),
@@ -56,7 +63,7 @@ export function render(main) {
 
       groups.filter(([k]) => visible.some((e) => e.state === k)).map(([k, label, cls]) => h('div', { class: 'board-group' },
         h('div', { class: 'section-title' }, h('span', { class: `dot ${cls}` }), h('h3', null, `${label}`), h('span', { class: 'badge' }, visible.filter((e) => e.state === k).length)),
-        h('div', { class: 'panel', style: { overflow: 'hidden' } }, visible.filter((e) => e.state === k).sort((a, b) => a.r.label.localeCompare(b.r.label)).map(boardRow)))),
+        h('div', { class: 'panel', style: { overflow: 'hidden' } }, visible.filter((e) => e.state === k).sort(order).map(boardRow)))),
       !entries.length ? h('div', { class: 'empty' }, h('h3', null, 'No GitHub repositories'), h('div', null, 'Repositories whose remote points to GitHub show up here.')) : null);
   }
 

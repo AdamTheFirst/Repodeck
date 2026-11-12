@@ -98,7 +98,7 @@ function detail(view, r, number) {
   function renderTop() {
     const stateCls = pr.state === 'OPEN' ? (pr.isDraft ? '' : 'ok') : pr.state === 'MERGED' ? 'accent' : 'bad';
     mount(top,
-      iconBtn('chevronRight', 'Back to the list', () => navigate(`#/repo/${r.id}/prs`)),
+      iconBtn('back', 'Back to the list', () => navigate(`#/repo/${r.id}/prs`)),
       h('div', { class: 'col grow', style: { gap: '2px' } },
         h('div', { class: 'row' }, h('span', { class: 'title ellipsis' }, pr.title), h('span', { class: 'muted' }, `#${pr.number}`)),
         h('div', { class: 'row', style: { fontSize: '12px' } },
@@ -283,9 +283,17 @@ function detail(view, r, number) {
     }
     loadDiff(false);
     async function addComment(info) {
-      const v = await form({ title: `Comment on ${info.path}:${info.startLine && info.startLine !== info.line ? `${info.startLine}-` : ''}${info.line}`, fields: [{ name: 'body', label: 'Comment (Markdown). Use a ```suggestion block to propose a change.', type: 'textarea', rows: 6, required: true }], submit: 'Add to review' });
+      const fields = [{ name: 'body', label: 'Comment (Markdown)', type: 'textarea', rows: 5 }];
+      if (info.text != null) fields.push({ name: 'suggestion', label: 'Suggested change (optional): edit the lines below to propose exact replacement code; leave unchanged for a plain comment', type: 'textarea', rows: Math.min(12, info.text.split('\n').length + 1), value: info.text });
+      const v = await form({
+        title: `Comment on ${info.path}:${info.startLine && info.startLine !== info.line ? `${info.startLine}-` : ''}${info.line}`, wide: info.text != null, fields, submit: 'Add to review',
+      });
       if (!v) return;
-      draft = await rpc('pr.draft.add', { id: r.id, number, ...info, body: v.body });
+      let body = v.body.trim();
+      if (info.text != null && v.suggestion !== info.text) body = `${body}${body ? '\n\n' : ''}\`\`\`suggestion\n${v.suggestion}\n\`\`\``;
+      if (!body) { banner({ level: 'warn', title: 'Write a comment or change the suggested lines', timeout: 3000 }); return; }
+      const { text: _t, ...where } = info;
+      draft = await rpc('pr.draft.add', { id: r.id, number, ...where, body });
       diff.rerender(); renderReviewBar(); renderTabs();
     }
     function pendingNode(c) {

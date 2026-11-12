@@ -126,6 +126,7 @@ async function boot() {
     return;
   }
   applyTheme();
+  if (store.config._problem) banner({ level: 'error', title: 'Settings problem', body: store.config._problem, timeout: 0 });
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
   const { repos, roots } = await rpc('repos.list');
   store.roots = roots;

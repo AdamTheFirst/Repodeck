@@ -61,7 +61,7 @@ function detail(view, r, number) {
     try { i = await rpc('issue.view', { id: r.id, number }); } catch (e) { mount(page, h('div', { class: 'errbox' }, e.message)); return; }
     const box = h('textarea', { rows: 4, placeholder: 'Comment (Markdown)', style: { width: '100%' } });
     mount(page,
-      h('div', { class: 'row', style: { marginBottom: '10px' } }, iconBtn('chevronRight', 'Back', () => navigate(`#/repo/${r.id}/issues`)),
+      h('div', { class: 'row', style: { marginBottom: '10px' } }, iconBtn('back', 'Back', () => navigate(`#/repo/${r.id}/issues`)),
         h('h2', { class: 'grow' }, `${i.title} `, h('span', { class: 'muted' }, `#${i.number}`)),
         h('span', { class: `badge ${i.state === 'OPEN' ? 'ok' : ''}` }, i.state.toLowerCase()),
         btn('Create branch', () => branchFromIssue(i), { cls: 'small', iconName: 'branch' }),

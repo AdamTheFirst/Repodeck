@@ -22,7 +22,7 @@ export function render(view, r, sub) {
   let selected = sub || null;
   let compareWith = null;
   let disposed = false;
-  const filters = { branches: prefs.get(`gbranches.${r.id}`, []), author: '', grep: '', remotes: prefs.get('gRemotes', true), tags: prefs.get('gTags', true) };
+  const filters = { branches: prefs.get(`gbranches.${r.id}`, []), author: '', grep: '', since: '', remotes: prefs.get('gRemotes', true), tags: prefs.get('gTags', true) };
 
   const toolbar = h('div', { class: 'diff-toolbar' });
   const head = h('div', { class: 'graph-head' });
@@ -42,6 +42,8 @@ export function render(view, r, sub) {
         store.repos.map((x) => h('option', { value: x.id, selected: x.id === r.id }, x.label))),
       h('button', { class: 'btn small', onclick: (e) => branchFilterMenu(e.currentTarget) }, icon('branch', 'sm'), filters.branches.length ? `${filters.branches.length} branch${filters.branches.length > 1 ? 'es' : ''}` : 'All branches', icon('chevronDown', 'sm')),
       search, author,
+      h('select', { title: 'Only commits after', onchange: (e) => { filters.since = e.target.value; reset(); } },
+        [['', 'Any date'], ['1 week ago', 'Last week'], ['1 month ago', 'Last month'], ['3 months ago', 'Last 3 months'], ['1 year ago', 'Last year']].map(([v, l]) => h('option', { value: v, selected: filters.since === v }, l))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.remotes, onchange: (e) => { filters.remotes = e.target.checked; prefs.set('gRemotes', filters.remotes); reset(); } }), 'Remote branches'),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: filters.tags, onchange: (e) => { filters.tags = e.target.checked; prefs.set('gTags', filters.tags); reset(); } }), 'Tags'),
       h('span', { class: 'spacer' }),
@@ -74,7 +76,7 @@ export function render(view, r, sub) {
       meta = await rpc('repo.graphMeta', { id: r.id });
     } catch (e) { mount(rowsEl, h('div', { class: 'errbox', style: { margin: '10px' } }, e.message)); return; }
     renderToolbar();
-    if (meta.summary.dirty && !filters.grep && !filters.author) {
+    if (meta.summary.dirty && !graphOff()) {
       commits.push({ hash: 'WORKTREE', parents: meta.head ? [meta.head] : [], subject: `Uncommitted changes (${meta.summary.dirty})`, author: '', commitTime: Date.now() / 1000, refs: [], uncommitted: true });
     }
     await loadMore();
@@ -86,21 +88,20 @@ export function render(view, r, sub) {
     loadingMore = true;
     try {
       const skip = commits.filter((c) => !c.uncommitted).length;
-      const res = await rpc('repo.log', { id: r.id, skip, limit: PAGE, branches: filters.branches, author: filters.author, grep: filters.grep, remotes: filters.remotes, tags: filters.tags });
+      const res = await rpc('repo.log', { id: r.id, skip, limit: PAGE, branches: filters.branches, author: filters.author, grep: filters.grep, since: filters.since || undefined, remotes: filters.remotes, tags: filters.tags });
       if (disposed) return;
       const known = new Set(commits.map((c) => c.hash));
       const fresh = res.commits.filter((c) => !known.has(c.hash));
       if (res.commits.length < PAGE) done = true;
-      const startIdx = commits.length;
       commits.push(...fresh);
-      computeLayout(startIdx);
+      computeLayout(layout.length); // includes the "uncommitted changes" row added before the first page
       renderRows(true);
     } catch (e) {
       mount(rowsEl, h('div', { class: 'errbox', style: { margin: '10px' } }, e.message));
     } finally { loadingMore = false; }
   }
 
-  const graphOff = () => !!(filters.grep || filters.author);
+  const graphOff = () => !!(filters.grep || filters.author || filters.since);
 
   /** Incremental lane assignment. Lanes stay put; free slots are reused. */
   function computeLayout(from) {

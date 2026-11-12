@@ -86,6 +86,7 @@ async function main() {
     state.stop();
     process.exit(code);
   }
+  process.on('exit', () => { try { const cur = readJson(paths.instance, null); if (cur && cur.pid === process.pid) fs.unlinkSync(paths.instance); } catch {} });
   process.on('SIGINT', () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
   process.on('uncaughtException', (e) => { log.error('Uncaught exception', { error: e.stack }); });

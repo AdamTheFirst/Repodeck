@@ -67,12 +67,20 @@ export function createDiffView(opts = {}) {
   function commentOnSelection(p) {
     const f = data.files[p.fileIdx];
     const lines = [];
-    for (const [hk, idxs] of Object.entries(p.hunks)) for (const li of idxs) lines.push(lineInfo(f, +hk, li));
+    const texts = [];
+    for (const [hk, idxs] of Object.entries(p.hunks)) {
+      for (const li of idxs) {
+        const info = lineInfo(f, +hk, li);
+        lines.push(info);
+        if (info && info.side === 'RIGHT') texts.push(f.hunks[+hk].lines[li].s);
+      }
+    }
     const valid = lines.filter(Boolean);
     if (!valid.length) return;
     const last = valid[valid.length - 1];
     const first = valid[0];
-    opts.onComment({ path: f.path, side: last.side, line: last.line, startLine: first.line, startSide: first.side });
+    const allRight = valid.every((x) => x.side === 'RIGHT');
+    opts.onComment({ path: f.path, side: last.side, line: last.line, startLine: first.line, startSide: first.side, text: allRight ? texts.join('\n') : null });
   }
 
   // numbering for a given line
@@ -168,7 +176,7 @@ export function createDiffView(opts = {}) {
           h('td', { class: 'ln', onclick: (e) => toggleLine(fi, hk, li, e) }, oldNo),
           h('td', { class: 'ln', onclick: (e) => toggleLine(fi, hk, li, e) }, newNo),
           h('td', { class: 'mark', onclick: (e) => toggleLine(fi, hk, li, e) },
-            opts.onComment ? h('a', { class: 'ln-add', title: 'Add a review comment', onclick: (e) => { e.stopPropagation(); opts.onComment({ path: f.path, side, line: ln }); } }, '+') : (l.t === ' ' ? '' : l.t)),
+            opts.onComment ? h('a', { class: 'ln-add', title: 'Add a review comment', onclick: (e) => { e.stopPropagation(); opts.onComment({ path: f.path, side, line: ln, text: side === 'RIGHT' ? l.s : null }); } }, '+') : (l.t === ' ' ? '' : l.t)),
           h('td', { class: 'code' }, pairs[li] || l.s));
         tb.append(row);
         if (opts.threadsFor) {
@@ -196,7 +204,7 @@ export function createDiffView(opts = {}) {
         const cls = l.t === '+' ? 'add' : l.t === '-' ? 'del' : '';
         return [
           h('td', { class: `ln ${cls}`, onclick: (e) => toggleLine(fi, hk, li, e), title: opts.onComment ? 'Click to select; use + to comment' : '' },
-            opts.onComment ? h('span', null, h('a', { class: 'ln-add', onclick: (e) => { e.stopPropagation(); opts.onComment({ path: f.path, side, line: num }); } }, '+ '), num) : num),
+            opts.onComment ? h('span', null, h('a', { class: 'ln-add', onclick: (e) => { e.stopPropagation(); opts.onComment({ path: f.path, side, line: num, text: side === 'RIGHT' ? l.s : null }); } }, '+ '), num) : num),
           h('td', { class: `code ${cls}` }, pairs[li] || l.s),
         ];
       };
