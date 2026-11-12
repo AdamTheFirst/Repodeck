@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Microsoft Store package. scripts\build-store.ps1 fills in the version.
+     Name, Publisher and PublisherDisplayName are the values Partner Center assigned to the app; the Store
+     rejects a package where they differ. The Store signs the package itself. -->
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+         xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+         xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+         IgnorableNamespaces="uap rescap">
+  <Identity Name="TheCuriousComputer.Repodeck" Publisher="CN=7A002019-98B8-42EB-90A6-42422F6B56CF" Version="{VERSION}" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Repodeck</DisplayName>
+    <PublisherDisplayName>The Curious Computer</PublisherDisplayName>
+    <Description>All your git repositories in one window: source control, commit graph, pull requests and GitHub Actions.</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <!-- Repodeck runs the git and gh programs on your computer, in your repositories. -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+  <Applications>
+    <Application Id="Repodeck" Executable="Repodeck.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Repodeck" Description="All your git repositories in one window" BackgroundColor="transparent"
+                          Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+</Package>

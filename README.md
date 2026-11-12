@@ -151,7 +151,7 @@ Release files are built by GitHub Actions from the source in this repository ([r
 - **Committers and reviewers:** [AdamTheFirst](https://github.com/AdamTheFirst), the owner of this repository. Changes from anyone else arrive as pull requests and are reviewed before they are merged.
 - **Approvers:** [AdamTheFirst](https://github.com/AdamTheFirst). Every signing request is approved by hand.
 
-**Privacy.** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Repodeck talks to GitHub only through the `git` and `gh` programs on your computer, as the account you signed in with, and has no telemetry.
+**Privacy.** This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. Repodeck talks to GitHub through the `git` and `gh` programs on your computer, as the account you signed in with, and has no telemetry. The optional update check asks GitHub for the latest release number and sends nothing about you; it can be turned off in Settings.
 
 ## License
 

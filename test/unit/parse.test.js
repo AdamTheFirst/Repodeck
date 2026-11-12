@@ -177,3 +177,12 @@ test('author filter matches the exact name, whatever characters it has', () => {
   assert.equal(authorPattern('Ada Lovelace'), '^Ada Lovelace <');
   assert.equal(authorPattern('J. R. "Bob" [x]*'), '^J\\. R\\. "Bob" \\[x\\]\\* <');
 });
+
+test('update check compares version numbers, not text', () => {
+  const { newer } = require('../../server/update');
+  assert.equal(newer('1.0.10', '1.0.9'), true);
+  assert.equal(newer('v1.1.0', '1.0.9'), true);
+  assert.equal(newer('1.0.2', '1.0.2'), false);
+  assert.equal(newer('1.0.1', '1.0.2'), false);
+  assert.equal(newer('', '1.0.2'), false);
+});

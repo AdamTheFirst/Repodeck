@@ -304,6 +304,7 @@ const H = {
     });
     return res.map((x) => (x.ok ? x.value : { error: x.error.message }));
   },
+  'update.check': (p) => require('./update').check({ force: !!(p && p.force) }),
   'app.about': () => ({ version: require('../package.json').version, installDir: path.resolve(__dirname, '..'), logDir: paths.logs, dataDir: paths.data }),
   'app.quit': () => { setTimeout(() => process.exit(0), 200); return { ok: true }; },
   'app.boardVisible': (p) => { state.setBoardVisible(!!p.visible); return { ok: true }; },

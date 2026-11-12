@@ -17,7 +17,8 @@ Repodeck runs a small HTTP server on your own machine so its window can talk to 
 - Repodeck never stores tokens. Each window works as one GitHub account. If that account is signed in to `gh` but is not the one `gh` uses by default, Repodeck asks `gh auth token --user <account>` for its token, keeps it in memory for up to ten minutes, passes it to `gh` through the `GH_TOKEN` environment variable and removes it from anything it logs. Other signed-in accounts are never used.
 - When an account is set to SSH, Repodeck rewrites `https://github.com/` addresses to that account's SSH connection for the one git command it runs. Repository settings are not changed.
 - git's SSH runs with `StrictHostKeyChecking=accept-new`: a host seen for the first time is added to `known_hosts`, because there is no terminal to answer the question; a host whose key has changed is still refused. If you set `core.sshCommand`, `GIT_SSH_COMMAND` or `GIT_SSH` yourself, yours is used unchanged.
-- Nothing is sent anywhere except by git and gh themselves. There is no telemetry.
+- Update check: a few times a day Repodeck asks GitHub's public API for this project's latest release number. The request carries no account, token or information about your computer or repositories. It only tells you a newer version exists; nothing is downloaded or installed unless you click Download. Turn it off in Settings → About.
+- Otherwise nothing is sent anywhere except by git and gh themselves. There is no telemetry.
 
 ## Data on disk
 

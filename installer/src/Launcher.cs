@@ -15,6 +15,14 @@ using System.Windows.Forms;
 static class AppIdentity
 {
     public const string Installed = "Repodeck.Desktop";
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    static extern int GetCurrentPackageFullName(ref int length, System.Text.StringBuilder name);
+    /// True when running as a Microsoft Store package: Windows then supplies the taskbar identity itself.
+    public static bool Packaged
+    {
+        get { try { int n = 0; return GetCurrentPackageFullName(ref n, null) == 122; } catch { return false; } }
+    }
     public static string Id
     {
         get { return File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "main.js")) ? Installed : "Repodeck.Dev"; }
@@ -49,7 +57,8 @@ static class Launcher
             return 1;
         }
         string path = FreshPath();
-        string node = FindNode(path);
+        string own = Path.Combine(root, "node", "node.exe"); // the Microsoft Store package brings its own
+        string node = File.Exists(own) ? own : FindNode(path);
         if (node == null)
         {
             MessageBox.Show("Node.js was not found.\n\nRun Repodeck Setup and choose Repair to install it, or install Node.js 20 or newer yourself.", "Repodeck", MessageBoxButtons.OK, MessageBoxIcon.Warning);

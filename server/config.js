@@ -24,6 +24,7 @@ const DEFAULTS = {
   notifications: true,
   notifySound: false,
   notifyReviewRequests: true,
+  checkForUpdates: true,       // ask GitHub now and then whether a newer release exists (nothing is installed)
   closeToTray: true,           // the window's close button hides it to the notification area
   keepRunningWhenClosed: false,
   editorCommand: 'code',       // program + args; {path} is replaced

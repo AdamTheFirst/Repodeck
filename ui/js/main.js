@@ -32,6 +32,18 @@ function applyTheme() {
   tellHostTheme();
 }
 
+// ---------- updates ----------
+// Says once per new version that it exists. Nothing is downloaded until the user asks.
+async function checkForUpdate() {
+  let u; try { u = await rpc('update.check'); } catch { return; }
+  if (!u || !u.available || prefs.get('updateTold') === u.latest) return;
+  prefs.set('updateTold', u.latest);
+  banner({
+    level: 'info', title: `Repodeck ${u.latest} is available`, body: `You have ${u.current}. Your settings are kept when you update.`, timeout: 0,
+    actions: [{ label: 'Download', action: () => rpc('open.url', { url: u.download }) }, { label: 'What is new', action: () => rpc('open.url', { url: u.notes }) }],
+  });
+}
+
 // ---------- top bar ----------
 const NAV = [
   ['repo', 'Repositories', 'folder', () => { const id = store.selected || prefs.get('lastRepo') || (store.repos[0] && store.repos[0].id); navigate(id ? `#/repo/${id}/${store.tab}` : '#/repo'); }],
@@ -184,6 +196,7 @@ async function boot() {
     return;
   }
   applyTheme(); applyTitle(); tellHostTray();
+  setTimeout(checkForUpdate, 8000); setInterval(checkForUpdate, 6 * 60 * 60 * 1000);
   if (store.config._problem) banner({ level: 'error', title: 'Settings problem', body: store.config._problem, timeout: 0 });
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
   splash('Reading your repositories');

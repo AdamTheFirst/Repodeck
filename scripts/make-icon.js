@@ -86,3 +86,33 @@ fs.writeFileSync(outFile, Buffer.concat([header, dir, ...images]));
 fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-32.png'), pngs[2]);
 fs.writeFileSync(path.join(__dirname, '..', 'ui', 'icon-256.png'), pngs[6]);
 console.log(`Wrote ${outFile}`);
+
+// node scripts/make-icon.js --store <folder>: the logo pictures a Microsoft Store package needs
+const storeArg = process.argv.indexOf('--store');
+if (storeArg > 0 && process.argv[storeArg + 1]) {
+  const dir = process.argv[storeArg + 1];
+  fs.mkdirSync(dir, { recursive: true });
+  /** The logo centred on a transparent canvas, taking up "fill" of the smaller side. */
+  const padded = (w, h, fill) => {
+    const side = Math.round(Math.min(w, h) * fill);
+    const logo = render(side);
+    const out = Buffer.alloc(w * h * 4);
+    const ox = Math.floor((w - side) / 2); const oy = Math.floor((h - side) / 2);
+    for (let y = 0; y < side; y++) logo.copy(out, ((y + oy) * w + ox) * 4, y * side * 4, (y + 1) * side * 4);
+    return out;
+  };
+  const pngRect = (w, h, rgba) => {
+    const raw = Buffer.alloc((w * 4 + 1) * h);
+    for (let y = 0; y < h; y++) { raw[y * (w * 4 + 1)] = 0; rgba.copy(raw, y * (w * 4 + 1) + 1, y * w * 4, (y + 1) * w * 4); }
+    const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+    return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
+  };
+  const write = (name, w, h, fill) => fs.writeFileSync(path.join(dir, name), pngRect(w, h, padded(w, h, fill)));
+  write('StoreLogo.png', 50, 50, 0.9);
+  write('Square44x44Logo.png', 44, 44, 0.9);
+  for (const n of [16, 24, 32, 48, 256]) { write(`Square44x44Logo.targetsize-${n}.png`, n, n, 1); write(`Square44x44Logo.targetsize-${n}_altform-unplated.png`, n, n, 1); }
+  write('Square150x150Logo.png', 150, 150, 0.5);
+  write('Wide310x150Logo.png', 310, 150, 0.5);
+  write('StoreListingLogo300.png', 300, 300, 0.8);
+  console.log(`Wrote Store pictures to ${dir}`);
+}

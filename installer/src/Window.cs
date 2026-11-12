@@ -25,7 +25,7 @@ static class WindowHost
         string version = null;
         try { version = CoreWebView2Environment.GetAvailableBrowserVersionString(); } catch { }
         if (string.IsNullOrEmpty(version)) return 3;
-        SetCurrentProcessExplicitAppUserModelID(AppIdentity.Id);
+        if (!AppIdentity.Packaged) SetCurrentProcessExplicitAppUserModelID(AppIdentity.Id);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
         var w = new MainWindow(url, account);
@@ -104,7 +104,7 @@ sealed class MainWindow : Form
         base.OnHandleCreated(e);
         TitleBar(true, Ink);
         // "Pin to taskbar" pins Repodeck.exe itself, not this window's command line.
-        try { Brand.Apply(Handle, Application.ExecutablePath, false); } catch { }
+        try { if (!AppIdentity.Packaged) Brand.Apply(Handle, Application.ExecutablePath, false); } catch { }
     }
 
     async Task Start()

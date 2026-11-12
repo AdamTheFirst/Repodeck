@@ -2,6 +2,11 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.1.0
+
+- Update check: the app says when a newer version is out, with a Download button; also under Settings → About, where it can be turned off
+- Microsoft Store package (`scripts/build-store.ps1`), with its own copy of Node.js
+
 ## 1.0.2
 
 - The taskbar shows the current icon after an update instead of a cached old one

@@ -555,13 +555,31 @@ async function diagnostics(el) {
 
 async function about(el) {
   const a = await rpc('app.about').catch(() => ({ version: '?' }));
+  const upText = h('div', { class: 'set-desc' }, 'Checking…');
+  const upTools = h('div', { class: 'row' });
+  const showUpdate = (u) => {
+    const check = btn('Check now', async () => { upText.textContent = 'Checking…'; showUpdate(await rpc('update.check', { force: true }).catch((e) => ({ error: e.message }))); }, { cls: 'small' });
+    if (u.managed === 'store') { upText.textContent = 'This copy comes from the Microsoft Store, which keeps it up to date.'; mount(upTools); return; }
+    if (u.disabled) { upText.textContent = 'Automatic checks are off.'; mount(upTools, check); return; }
+    if (u.error) { upText.textContent = `Could not check: ${u.error}`; mount(upTools, check); return; }
+    if (u.available) {
+      upText.textContent = `Version ${u.latest} is available. Your settings are kept when you update.`;
+      mount(upTools, btn('Download', () => rpc('open.url', { url: u.download }), { cls: 'small primary' }), btn('What is new', () => rpc('open.url', { url: u.notes }), { cls: 'small' }), check);
+      return;
+    }
+    upText.textContent = `You have the latest version${u.checkedAt ? `. Checked ${new Date(u.checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}.`;
+    mount(upTools, check);
+  };
+  rpc('update.check').then(showUpdate, (e) => showUpdate({ error: e.message }));
   mount(el, head('About'),
     card(
       h('div', { class: 'set-row' }, h('img', { src: '/icon.svg', width: 44, height: 44, alt: '' }), h('div', { class: 'set-label' }, h('div', { class: 'set-name big' }, 'Repodeck'), h('div', { class: 'set-desc' }, `Version ${a.version}`))),
+      h('div', { class: 'set-row' }, h('div', { class: 'set-label' }, h('div', { class: 'set-name' }, 'Updates'), upText), h('div', { class: 'set-control' }, upTools)),
+      toggle('checkForUpdates', 'Check for updates automatically', 'Asks GitHub a few times a day whether a newer release exists. Nothing about you is sent, and nothing is installed without you.'),
       row('Installed in', null, h('span', { class: 'mono muted' }, a.installDir || '')),
       row('Logs', 'Every git and GitHub command is also listed under Activity', h('div', { class: 'row' }, btn('Open activity', () => navigate('#/activity'), { cls: 'small' }), btn('Copy log folder', () => copyText(a.logDir), { cls: 'small' }))),
       row('Keyboard shortcuts', null, btn('Show', () => import('../help.js').then((m) => m.showShortcuts()), { cls: 'small' })),
-      row('Licence', 'MIT. No telemetry; nothing is sent anywhere except by git and the GitHub CLI.', null)));
+      row('Licence', 'MIT. No telemetry. Apart from git, the GitHub CLI and the update check above, nothing contacts the internet.', null)));
 }
 
 export { setup, cloneDialog } from '../onboarding.js';
