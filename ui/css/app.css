@@ -718,3 +718,14 @@ table.grid tr:last-child td { border-bottom: 0; }
 .cd-stat .add { color: var(--ok); } .cd-stat .del { color: var(--bad); }
 
 .cd-meta .badge { flex: none; }
+
+/* counts on the repository tabs */
+.tab .badge { margin-left: 2px; }
+.tab .badge.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.tab .badge.run { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+
+/* steps of a workflow job: one per line, name left, time right */
+.run-steps { font-size: 12px; padding: 2px 12px 10px 30px; display: flex; flex-direction: column; }
+.run-step { display: flex; align-items: center; gap: 8px; padding: 4px 0; min-width: 0; color: var(--muted); }
+.run-step > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.run-step > span:last-child { flex: none; font-variant-numeric: tabular-nums; color: var(--faint); }

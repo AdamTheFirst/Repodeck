@@ -426,7 +426,7 @@ async function deployments(s) {
 
 function boardQuery(slugs) {
   const parts = slugs.map((s, i) => `r${i}: repository(owner:${JSON.stringify(s.owner)}, name:${JSON.stringify(s.repo)}) {
-    nameWithOwner defaultBranchRef { name target { ... on Commit { oid messageHeadline committedDate url author { name user { login } }
+    nameWithOwner pullRequests(states: OPEN) { totalCount } issues(states: OPEN) { totalCount } defaultBranchRef { name target { ... on Commit { oid messageHeadline committedDate url author { name user { login } }
       statusCheckRollup { state }
       checkSuites(last: 30) { nodes { status conclusion createdAt updatedAt app { slug }
         workflowRun { databaseId runNumber url createdAt updatedAt event workflow { name } } } } } } } }`);
@@ -455,7 +455,8 @@ async function boardBatch(slugs, login) {
         return;
       }
       const ref = repo.defaultBranchRef;
-      if (!ref || !ref.target) { out[key] = { branch: ref ? ref.name : null, runs: [] }; return; }
+      const counts = { openPrs: repo.pullRequests ? repo.pullRequests.totalCount : null, openIssues: repo.issues ? repo.issues.totalCount : null };
+      if (!ref || !ref.target) { out[key] = { branch: ref ? ref.name : null, runs: [], ...counts }; return; }
       const t = ref.target;
       const runs = (t.checkSuites ? t.checkSuites.nodes : []).filter((n) => n.workflowRun).map((n) => ({
         id: n.workflowRun.databaseId, number: n.workflowRun.runNumber, url: n.workflowRun.url,
@@ -466,7 +467,7 @@ async function boardBatch(slugs, login) {
       out[key] = {
         branch: ref.name, oid: t.oid, headline: t.messageHeadline, committedDate: t.committedDate, commitUrl: t.url,
         author: t.author ? (t.author.user ? t.author.user.login : t.author.name) : '',
-        rollup: t.statusCheckRollup ? t.statusCheckRollup.state.toLowerCase() : null, runs,
+        rollup: t.statusCheckRollup ? t.statusCheckRollup.state.toLowerCase() : null, runs, ...counts,
       };
     });
   }

@@ -2,6 +2,12 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Every repository tab shows a count when there is something under it: unpushed commits, branches, stashes, open pull requests, open issues, failing or running workflow runs
+- The sidebar shows each repository's number of open pull requests
+- A workflow run's steps are a proper list, one per line
+
 ## 1.1.1
 
 - Node.js is included with the app, so Setup only needs Git and GitHub CLI (Setup is about 30 MB now)

@@ -89,13 +89,36 @@ export function renderRepo(main, id, tab, sub) {
     mount(statebar, items);
   }
 
+  // local branch and tag counts for the Branches tab, fetched when the page opens and after each change
+  let refCounts = null;
+  let refTimer = null;
+  function loadRefCounts() {
+    clearTimeout(refTimer);
+    refTimer = setTimeout(async () => {
+      try { const refs = await rpc('repo.refs', { id: r.id }); if (disposed) return; refCounts = { branches: refs.local.length, tags: (refs.tags || []).length }; renderTabs(); } catch { /* the tab just has no count */ }
+    }, 400);
+  }
+  loadRefCounts();
+
   function renderTabs() {
     mount(tabs, TABS.map(([k, label, ic]) => {
       let extra = null;
       const s = r.summary || {};
-      if (k === 'changes' && s.dirty) extra = h('span', { class: 'badge dirty' }, s.dirty);
-      if (k === 'stashes' && s.stash) extra = h('span', { class: 'badge' }, s.stash);
-      if (k === 'actions') { const bs = boardState(boardFor(r)); if (bs === 'failure') extra = h('span', { class: 'dot bad' }); else if (bs === 'running') extra = h('span', { class: 'dot run' }); }
+      const b = boardFor(r);
+      const count = (n, cls, title) => (n ? h('span', { class: `badge ${cls || ''}`, title: title || '' }, n) : null);
+      if (k === 'changes') extra = count(s.dirty, 'dirty', 'Files with changes');
+      if (k === 'graph') extra = count(s.upstream ? s.ahead : s.unpushed, 'info', 'Commits that are not pushed yet');
+      if (k === 'branches') extra = count(refCounts && refCounts.branches > 1 ? refCounts.branches : 0, '', refCounts ? `${refCounts.branches} local branches, ${refCounts.tags} tags` : '');
+      if (k === 'stashes') extra = count(s.stash, '', 'Stashes');
+      if (k === 'prs') extra = count(b && !b.error ? b.openPrs : 0, '', 'Open pull requests');
+      if (k === 'issues') extra = count(b && !b.error ? b.openIssues : 0, '', 'Open issues');
+      if (k === 'actions' && b && !b.error) {
+        const runs = b.runs || [];
+        const failed = runs.filter((x) => x.status === 'completed' && ['failure', 'timed_out', 'startup_failure', 'action_required'].includes(x.conclusion)).length;
+        const running = runs.filter((x) => x.status !== 'completed').length;
+        extra = failed ? count(failed, 'bad', 'Failing runs on the latest commit of the default branch') : count(running, 'run', 'Runs in progress on the default branch');
+        if (!extra) { const bs = boardState(b); if (bs === 'failure') extra = h('span', { class: 'dot bad' }); else if (bs === 'running') extra = h('span', { class: 'dot run' }); }
+      }
       return h('button', { class: `tab ${tab === k ? 'active' : ''}`, role: 'tab', onclick: () => navigate(`#/repo/${r.id}/${k}`), title: `Alt+${TABS.findIndex((t) => t[0] === k) + 1}` }, icon(ic, 'sm'), label, extra);
     }));
   }
@@ -114,7 +137,7 @@ export function renderRepo(main, id, tab, sub) {
   }
 
   const unsubs = [
-    subscribe('summary', (sid) => { if (sid === id && !disposed) { renderHead(); renderTabs(); if (disposeTab && disposeTab.onSummary) disposeTab.onSummary(); } }),
+    subscribe('summary', (sid) => { if (sid === id && !disposed) { renderHead(); renderTabs(); loadRefCounts(); if (disposeTab && disposeTab.onSummary) disposeTab.onSummary(); } }),
     subscribe('board', () => { if (!disposed) { renderHead(); renderTabs(); } }),
   ];
   renderHead(); renderTabs();

@@ -270,8 +270,9 @@ function repoRow(r, depth, hasKids, dim) {
   if (s.ahead) meta.push(h('span', { class: 'badge info', title: `${s.ahead} commit(s) to push` }, `↑${s.ahead}`));
   if (!s.upstream && s.unpushed) meta.push(h('span', { class: 'badge info', title: `${s.unpushed} commit(s) on a branch that is not published` }, `↑${s.unpushed}`));
   if (s.behind) meta.push(h('span', { class: 'badge warn', title: `${s.behind} commit(s) to pull` }, `↓${s.behind}`));
-  const prs = myPrCount(r);
-  if (prs) meta.push(h('span', { class: 'badge', title: `${prs} open pull request(s) by you` }, icon('pr', 'sm'), prs));
+  const mine = myPrCount(r);
+  const open = b && !b.error && b.openPrs != null ? b.openPrs : mine;
+  if (open) meta.push(h('span', { class: `badge ${mine ? 'accent' : ''}`, title: `${open} open pull request${open === 1 ? '' : 's'}${mine ? `, ${mine} by you` : ''}` }, icon('pr', 'sm'), open));
   const ci = bs === 'failure' ? 'bad' : bs === 'running' ? 'run' : bs === 'success' ? 'ok' : '';
   const offDefault = s.branch && s.defaultBranch && s.branch !== s.defaultBranch;
   return h('div', {

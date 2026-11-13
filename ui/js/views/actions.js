@@ -126,7 +126,7 @@ function runDetail(view, r, runId) {
     mount(jobsEl, jobs.length ? jobs.map((j) => h('div', null,
       h('div', { class: `list-row ${selectedJob === j.databaseId ? 'selected' : ''}`, onclick: () => { selectedJob = j.databaseId; load(); } },
         runDot(j.status, j.conclusion), h('div', { class: 'grow' }, h('div', { class: 't ellipsis' }, j.name), h('div', { class: 'sub' }, j.startedAt ? (j.completedAt && j.status === 'completed' ? duration(j.startedAt, j.completedAt) : `running ${duration(j.startedAt)}`) : 'waiting'))),
-      selectedJob === j.databaseId ? h('div', { class: 'steps', style: { padding: '4px 12px 10px 30px' } }, (j.steps || []).map((s) => h('div', { class: 'step' }, runDot(s.status, s.conclusion), h('span', { class: 'grow' }, s.name),
+      selectedJob === j.databaseId ? h('div', { class: 'run-steps' }, (j.steps || []).map((s) => h('div', { class: 'run-step' }, runDot(s.status, s.conclusion), h('span', { class: 'grow' }, s.name),
         h('span', { class: 'faint' }, s.startedAt && s.completedAt && s.status === 'completed' ? duration(s.startedAt, s.completedAt) : '')))) : null))
       : h('div', { class: 'empty' }, run.status === 'completed' ? 'No jobs.' : 'Waiting for jobs to start…'));
     loadLog(jobs.find((j) => j.databaseId === selectedJob));
