@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.1.2
 
 - Every repository tab shows a count when there is something under it: unpushed commits, branches, stashes, open pull requests, open issues, failing or running workflow runs
 - The sidebar shows each repository's number of open pull requests
