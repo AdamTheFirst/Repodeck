@@ -2,7 +2,8 @@
 <h1 align="center">Repodeck</h1>
 <p align="center">All your git repositories in one window: source control, commit graph, pull requests and GitHub Actions.</p>
 <p align="center">
-  <a href="https://github.com/AdamTheFirst/Repodeck/releases/latest/download/RepodeckSetup.exe"><b>Download for Windows</b></a>
+  <a href="https://apps.microsoft.com/detail/9P8XJ149M9ZL"><b>Get it from Microsoft Store</b></a>
+  &nbsp;·&nbsp; <a href="https://github.com/AdamTheFirst/Repodeck/releases/latest/download/RepodeckSetup.exe">Direct download</a>
   &nbsp;·&nbsp; <a href="https://github.com/AdamTheFirst/Repodeck/releases">All releases</a>
   &nbsp;·&nbsp; <a href="CHANGELOG.md">Changelog</a>
 </p>
@@ -13,8 +14,25 @@ It runs entirely on your computer. A small local server drives the `git` and `gh
 
 ## Install
 
+There are two ways. Both are free and give you the same app.
+
+| | Microsoft Store (recommended) | Direct download |
+| --- | --- | --- |
+| Get it | [Repodeck in Microsoft Store](https://apps.microsoft.com/detail/9P8XJ149M9ZL) | [`RepodeckSetup.exe`](https://github.com/AdamTheFirst/Repodeck/releases/latest/download/RepodeckSetup.exe) |
+| Signed | Yes, by Microsoft | Not yet |
+| Works with Smart App Control on | Yes | No |
+| Updates | Automatic, through the Store | The app tells you; you run the new Setup |
+| Install for all users, choose the folder | No | Yes |
+| Installs missing Git and GitHub CLI for you | No, it tells you what is missing | Yes |
+
+### Microsoft Store
+
+Open the [Store page](https://apps.microsoft.com/detail/9P8XJ149M9ZL) and choose **Get**. Repodeck needs Git, and GitHub CLI for the GitHub features; install them yourself if you do not have them.
+
+### Direct download
+
 1. Download [`RepodeckSetup.exe`](https://github.com/AdamTheFirst/Repodeck/releases/latest/download/RepodeckSetup.exe).
-2. Run it and follow the four steps.
+2. Run it and follow the steps.
 
 Setup lets you choose:
 
@@ -26,7 +44,7 @@ Setup lets you choose:
 
 Run Setup again later to update, repair or uninstall; it is also listed under Installed apps in Windows. Uninstalling keeps your settings unless you tick the box, and never touches your repositories.
 
-> Setup is not code-signed yet. Windows SmartScreen may show "Windows protected your PC" the first time: choose **More info**, then **Run anyway**. On computers where **Smart App Control** is on, Windows blocks unsigned apps without that choice; there Repodeck can only be run from source until releases are signed. Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
+> Setup is not code-signed yet. Windows SmartScreen may show "Windows protected your PC" the first time: choose **More info**, then **Run anyway**. On computers where **Smart App Control** is on, Windows blocks unsigned apps with no way past; use the Microsoft Store version there. Each release lists SHA-256 checksums in `SHA256SUMS.txt`.
 
 Requirements: Windows 10 or 11.
 
