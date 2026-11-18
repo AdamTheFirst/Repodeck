@@ -151,7 +151,7 @@ function detail(view, r, number) {
       pr.state === 'OPEN' ? mergeBox() : pr.state === 'MERGED' ? h('div', { class: 'info-box row', style: { marginBottom: '10px' } },
         h('span', { class: 'grow' }, `Merged ${pr.mergedAt ? ago(pr.mergedAt) : ''}${pr.mergedBy ? ` by ${pr.mergedBy.login}` : ''}${pr.mergeCommit ? ` as ${pr.mergeCommit.oid.slice(0, 8)}` : ''}.`, ' ',
           h('a', { onclick: () => navigate('#/board') }, 'See its workflow runs on the Actions board')),
-        pr.localBranch || pr.remoteBranch ? btn('Clean up branch', () => cleanup(true), { cls: 'small', iconName: 'trash', title: `Switch to ${pr.baseRefName}, pull, and delete ${pr.localBranch || pr.headRefName}` }) : null) : null,
+        pr.localBranch || pr.remoteBranch ? btn('Clean up branch', () => cleanupNow(), { cls: 'small', iconName: 'trash', title: `Switch to ${pr.baseRefName}, pull, and delete ${pr.localBranch || pr.headRefName}` }) : null) : null,
       h('div', { class: 'col' }, commentBox, h('div', { class: 'row' }, h('span', { class: 'spacer' }),
         btn('Comment', async () => { if (!commentBox.value.trim()) return; const ok = await act(() => rpc('pr.comment', { id: r.id, number, body: commentBox.value }), { ok: 'Comment posted' }); if (ok !== undefined) { commentBox.value = ''; load(); } }, { cls: 'primary' }))));
     // sidebar
@@ -242,16 +242,19 @@ function detail(view, r, number) {
       prefs.set('deleteAfterMerge', delBranch.checked);
       prefs.set('cleanupAfterMerge', tidy.checked);
       const tidyUp = tidy.checked && !auto;
+      // asked before the merge, so that cancelling here cancels everything
+      const plan = tidyUp ? await planCleanup(false) : null;
+      if (tidyUp && !plan) return;
       const ok = await confirmDanger({
         title: auto ? 'Enable auto-merge?' : `Merge #${number}?`,
-        message: `${auto ? 'When all requirements are met, GitHub will merge' : 'Merge'} ${pr.commits.length} commit(s) from ${pr.headRefName} into ${pr.baseRefName} using "${allowed.find((a) => a[0] === method)[2]}". Only the commits you see here (head ${pr.headRefOid.slice(0, 8)}) will be merged.${delBranch.checked && !auto ? ` The branch ${pr.headRefName} will be deleted on GitHub.` : ''}${tidyUp ? ` Then this folder switches to ${pr.baseRefName}, pulls, and the local branch is deleted.` : ''}`,
+        message: `${auto ? 'When all requirements are met, GitHub will merge' : 'Merge'} ${pr.commits.length} commit(s) from ${pr.headRefName} into ${pr.baseRefName} using "${allowed.find((a) => a[0] === method)[2]}". Only the commits you see here (head ${pr.headRefOid.slice(0, 8)}) will be merged.${delBranch.checked && !auto ? ` The branch ${pr.headRefName} will be deleted on GitHub.` : ''}${tidyUp ? (plan.stay ? ` Then ${pr.baseRefName} is updated and the local branch is deleted; you stay on ${r.summary.branch}.` : ` Then this folder switches to ${pr.baseRefName}, pulls, and the local branch is deleted.`) : ''}`,
         confirmLabel: auto ? 'Enable auto-merge' : 'Merge', danger: false,
       });
       if (!ok) return;
       try {
         const res = await rpc('pr.merge', { id: r.id, number, method, subject: subj.value, body: msgBody.value, auto, headOid: pr.headRefOid, deleteBranch: delBranch.checked, headRef: pr.headRefName, crossRepo: pr.isCrossRepository });
-        banner({ level: 'success', title: auto ? 'Auto-merge enabled' : `Merged #${number}`, body: auto ? null : `Tracking the workflow runs on ${pr.baseRefName}. You will get a notification when they finish.${res.deleteError ? `\nBranch not deleted: ${res.deleteError}` : ''}`, timeout: 8000, actions: auto ? [] : [{ label: 'Open Actions board', action: () => navigate('#/board') }] });
-        if (tidyUp) await cleanup(false);
+        banner({ level: 'success', title: auto ? 'Auto-merge enabled' : `Merged #${number}`, body: auto ? (tidy.checked ? 'The clean-up cannot wait for the merge. Once it has merged, use "Clean up branch" on this page.' : null) : `Tracking the workflow runs on ${pr.baseRefName}. You will get a notification when they finish.${res.deleteError ? `\nBranch not deleted: ${res.deleteError}` : ''}`, timeout: 8000, actions: auto ? [] : [{ label: 'Open Actions board', action: () => navigate('#/board') }] });
+        if (tidyUp) await cleanup(plan);
         load();
       } catch (e) { showError(e, 'Merge failed'); }
     }
@@ -361,22 +364,67 @@ function detail(view, r, number) {
   }
 
   // ----- after the merge -----
-  async function cleanup(ask) {
+  /** Ask, before anything happens, the questions the clean-up depends on. Returns { stay, mode } or null when cancelled. */
+  async function planCleanup(confirm) {
+    const s = r.summary || {};
     const name = pr.localBranch || pr.headRefName;
-    if (ask && !(await confirmDanger({
+    const base = pr.baseRefName;
+    const what = `delete the branch ${name} in this folder${pr.isCrossRepository ? '' : ' and on GitHub'}`;
+    const kept = 'A branch with commits that were not part of this pull request is kept.';
+    let stay = false; let mode = 'carry'; let asked = false;
+    if (s.branch && s.branch !== name && s.branch !== base) {
+      const c = await modal({ title: `You are on ${s.branch}`, body: h('div', null, `Cleaning up will ${what} and update ${base}. Switch to ${base} as well, or stay on ${s.branch}? ${kept}`),
+        actions: [{ label: 'Cancel', value: null }, { label: `Stay on ${s.branch}`, value: 'stay' }, { label: `Switch to ${base}`, cls: 'primary', default: true, value: 'switch' }] });
+      if (!c) return null;
+      stay = c === 'stay'; asked = true;
+    }
+    if (!stay && s.branch !== base && s.dirty) {
+      const c = await modal({ title: 'Uncommitted changes', body: h('div', null, `You have ${s.dirty} uncommitted change(s). Cleaning up switches to ${base}. Stash them first, or bring them along to ${base}?`),
+        actions: [{ label: 'Cancel', value: null }, { label: `Bring to ${base}`, value: 'carry' }, { label: 'Stash and clean up', cls: 'primary', default: true, value: 'stash' }] });
+      if (!c) return null;
+      mode = c; asked = true;
+    }
+    if (confirm && !asked && !(await confirmDanger({
       title: 'Clean up after the merge?',
-      message: `Switch to ${pr.baseRefName} and pull it, then delete the branch ${name} in this folder${pr.isCrossRepository ? '' : ' and on GitHub'}. A branch with commits that were not part of this pull request is kept.`,
+      message: `${s.branch === base ? `Pull ${base}` : `Switch to ${base} and pull it`}, then ${what}. ${kept}`,
       confirmLabel: 'Clean up', danger: false,
-    }))) return;
+    }))) return null;
+    return { stay, mode };
+  }
+  async function cleanup(plan) {
     try {
-      const res = await rpc('pr.cleanup', { id: r.id, number });
+      const res = await rpc('pr.cleanup', { id: r.id, number, ...plan });
       const done = [
-        res.switched ? `Switched to ${res.base}` : null, res.pulled ? `pulled ${res.base}` : null,
+        res.switched ? `Switched to ${res.base}` : null, res.pulled ? `${res.current === res.base ? 'pulled' : 'updated'} ${res.base}` : null,
         res.localDeleted ? `deleted the local branch ${res.branch}` : null, res.remoteDeleted ? `deleted ${res.branch} on GitHub` : null,
       ].filter(Boolean).join(', ');
-      banner({ level: res.notes.length ? 'warn' : 'success', title: done ? `${done[0].toUpperCase()}${done.slice(1)}` : 'Nothing left to clean up', body: res.notes.join('\n') || null, timeout: res.notes.length ? 12000 : 5000 });
+      const notes = [...res.notes];
+      if (res.stashed) notes.unshift('Your uncommitted changes are in a stash.');
+      banner({ level: res.notes.length ? 'warn' : 'success', title: done ? `${done[0].toUpperCase()}${done.slice(1)}` : 'Nothing was cleaned up', body: notes.join('\n') || null, timeout: res.notes.length ? 15000 : 6000,
+        actions: [
+          res.stashed ? { label: 'Open stashes', action: () => navigate(`#/repo/${r.id}/stashes`) } : null,
+          // kept because of extra commits: the decision is yours
+          res.keptLocal ? { label: 'Delete local branch anyway…', action: () => deleteKept(res, false) } : null,
+          res.keptRemote ? { label: 'Delete on GitHub anyway…', action: () => deleteKept(res, true) } : null,
+          res.keptLocal || res.keptRemote ? { label: 'Look at the branch', action: () => navigate(`#/repo/${r.id}/branches`) } : null,
+        ].filter(Boolean) });
     } catch (e) { showError(e, 'Could not clean up'); }
-    if (ask) load();
+  }
+  async function deleteKept(res, onRemote) {
+    if (!(await confirmDanger({
+      title: `Delete ${res.branch}${onRemote ? ' on GitHub' : ''}?`,
+      message: `${onRemote ? `${res.remote}/${res.branch}` : `The local branch ${res.branch}`} has commits that were not part of pull request #${number}. Deleting it throws those commits away.`,
+      recover: onRemote ? 'Not recoverable from here unless someone still has the branch locally.' : 'The commits stay reachable for a while through "git reflog", but no branch points to them.',
+      confirmLabel: 'Delete',
+    }))) return;
+    await act(() => (onRemote ? rpc('branch.deleteRemote', { id: r.id, remote: res.remote, name: res.branch }) : rpc('branch.delete', { id: r.id, name: res.branch, force: true })), { ok: `Deleted ${res.branch}${onRemote ? ' on GitHub' : ''}` });
+    load();
+  }
+  async function cleanupNow() {
+    const plan = await planCleanup(true);
+    if (!plan) return;
+    await cleanup(plan);
+    load();
   }
 
   // ----- edits -----
