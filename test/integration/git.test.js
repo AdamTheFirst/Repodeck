@@ -363,7 +363,7 @@ test('after a merged pull request: switch to the base, pull, delete the branch h
   g(other, 'merge', '-q', '--squash', 'origin/feature/x'); g(other, 'commit', '-q', '-m', 'feature (#1)'); g(other, 'push', '-q', 'origin', 'main');
 
   const res = await G.finishMerged(repo, { branch: 'feature/x', base: 'main', headOid: head });
-  assert.deepEqual({ ...res, notes: res.notes.length }, { base: 'main', branch: 'feature/x', switched: true, pulled: true, localDeleted: true, remoteDeleted: true, notes: 0 });
+  assert.deepEqual({ ...res, notes: res.notes.length }, { base: 'main', branch: 'feature/x', current: 'main', switched: true, stashed: false, pulled: true, localDeleted: true, remoteDeleted: true, keptLocal: false, keptRemote: false, remote: 'origin', notes: 0 });
   assert.equal(g(dir, 'branch', '--show-current').trim(), 'main');
   assert.equal(read(dir, 'b.txt'), 'b\n', 'the merge was pulled');
   assert.equal(g(dir, 'branch', '-a', '--list', '*feature*').trim(), '');
@@ -377,10 +377,56 @@ test('after a merged pull request: switch to the base, pull, delete the branch h
   write(dir, 'd.txt', 'd\n'); g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', 'later, not pushed');
   const kept = await G.finishMerged(repo, { branch: 'feature/y', base: 'main', headOid: prHead });
   assert.equal(kept.localDeleted, false);
+  assert.equal(kept.keptLocal, true, 'the window offers to delete it anyway');
   assert.equal(kept.remoteDeleted, true, 'the remote branch is exactly the pull request, so it goes');
   assert.match(kept.notes.join(' '), /feature\/y has commits that were not part of the pull request/);
   assert.equal(g(dir, 'branch', '--list', 'feature/y').trim(), 'feature/y');
   assert.equal(g(dir, 'branch', '--show-current').trim(), 'main');
 
   await assert.rejects(G.finishMerged(repo, { branch: 'main', base: 'main' }), /base branch/);
+});
+
+test('cleaning up after a merge copes with uncommitted changes, an unrelated branch and a base that is checked out elsewhere', async (t) => {
+  const { root, dir, remote, repo } = setup(t);
+  const other = path.join(root, 'other');
+  g(root, 'clone', '-q', remote, other);
+  g(other, 'config', 'user.name', 'Test User'); g(other, 'config', 'user.email', 'test@example.com');
+  const pr = (name, file) => {
+    g(dir, 'switch', '-q', '-c', name, 'main');
+    write(dir, file, 'x\n'); g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', name);
+    g(dir, 'push', '-q', '-u', 'origin', name);
+    const head = g(dir, 'rev-parse', 'HEAD').trim();
+    g(other, 'pull', '-q'); g(other, 'merge', '-q', '--squash', `origin/${name}`); g(other, 'commit', '-q', '-m', `${name} (#1)`); g(other, 'push', '-q', 'origin', 'main');
+    return head;
+  };
+
+  // stash: the changes are set aside and the clean-up goes through
+  let head = pr('one', 'one.txt');
+  write(dir, 'a.txt', 'edited\n'); write(dir, 'untracked.txt', 'u\n');
+  let res = await G.finishMerged(repo, { branch: 'one', base: 'main', headOid: head, mode: 'stash' });
+  assert.deepEqual([res.switched, res.stashed, res.pulled, res.localDeleted, res.remoteDeleted, res.notes.length], [true, true, true, true, true, 0]);
+  assert.equal(read(dir, 'a.txt'), TEN);
+  assert.equal((await G.stashList(repo)).length, 1);
+  g(dir, 'stash', 'drop', '-q');
+
+  // stay: on an unrelated branch nothing moves under you, the base is still brought up to date
+  head = pr('two', 'two.txt');
+  g(dir, 'switch', '-q', '-c', 'unrelated', 'main');
+  write(dir, 'wip.txt', 'w\n');
+  res = await G.finishMerged(repo, { branch: 'two', base: 'main', headOid: head, stay: true });
+  assert.deepEqual([res.current, res.switched, res.pulled, res.localDeleted, res.remoteDeleted, res.notes.length], ['unrelated', false, true, true, true, 0]);
+  assert.equal(g(dir, 'rev-parse', 'main').trim(), g(dir, 'rev-parse', 'origin/main').trim());
+  assert.equal(read(dir, 'wip.txt'), 'w\n');
+  fs.rmSync(path.join(dir, 'wip.txt'));
+
+  // the base is checked out in another worktree: say so, keep the changes in place, still tidy the remote
+  head = pr('three', 'three.txt');
+  g(dir, 'worktree', 'add', '-q', path.join(root, 'wt'), 'main');
+  write(dir, 'a.txt', 'edited\n');
+  res = await G.finishMerged(repo, { branch: 'three', base: 'main', headOid: head, mode: 'stash' });
+  assert.deepEqual([res.current, res.switched, res.stashed, res.localDeleted, res.remoteDeleted], ['three', false, false, false, true]);
+  assert.match(res.notes.join('\n'), /checked out in another worktree/);
+  assert.match(res.notes.join('\n'), /still checked out, so it was kept/);
+  assert.equal(read(dir, 'a.txt'), 'edited\n', 'the stash was put back');
+  assert.equal((await G.stashList(repo)).length, 0);
 });

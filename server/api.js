@@ -713,6 +713,7 @@ const H = {
     return git.finishMerged(r, {
       branch: prLocalName(pr), base: pr.baseRefName, remote: s.remote || 'origin', headOid: pr.headRefOid,
       deleteRemote: !pr.isCrossRepository, strategy: config.get().pullStrategy,
+      stay: !!p.stay, mode: p.mode === 'stash' ? 'stash' : 'carry',
     });
   }),
   'pr.checkout': (p) => mutate(p, `Check out PR #${p.number}`, async (r) => {

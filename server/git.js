@@ -612,45 +612,70 @@ async function deleteRemoteBranch(repo, { remote, name }) {
 /**
  * After a pull request was merged on the remote: switch to the base branch, pull it, and delete the
  * merged branch locally and on the remote. A branch that holds commits the pull request did not
- * contain is kept. Only a failed switch stops the rest; other failures are reported in `notes`.
+ * contain is kept. Nothing here throws once it has started: every step that could not be done is
+ * explained in `notes` and the remaining steps still run.
  * headOid: the pull request's last commit, used to tell whether a branch has anything newer.
+ * stay: when on a branch that is neither the merged one nor the base, remain there (the base is still updated).
+ * mode: 'carry' takes uncommitted changes along to the base, 'stash' stashes them first.
  */
-async function finishMerged(repo, { branch, base, remote = 'origin', headOid, deleteRemote = true, strategy = 'ff-only' }) {
+async function finishMerged(repo, { branch, base, remote = 'origin', headOid, deleteRemote = true, strategy = 'ff-only', stay = false, mode = 'carry' }) {
   assertName(branch); assertName(base); assertName(remote, 'remote');
   if (headOid) assertRev(headOid);
   if (branch === base) throw new Error(`${branch} is the base branch.`);
   const ops = await opState(repo);
   if (ops.inProgress.length) throw new Error(`A ${ops.inProgress[0]} is in progress. Finish or abort it first.`);
-  const res = { base, branch, switched: false, pulled: false, localDeleted: false, remoteDeleted: false, notes: [] };
+  const res = { base, branch, remote, current: null, switched: false, stashed: false, pulled: false, localDeleted: false, remoteDeleted: false, keptLocal: false, keptRemote: false, notes: [] };
   const tip = async (ref) => { try { return (await qout(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim(); } catch { return null; } };
   const within = async (oid, target) => { try { await quiet(repo, ['merge-base', '--is-ancestor', oid, target]); return true; } catch { return false; } };
 
   let fetched = true;
-  try { await fetch(repo, { remote, prune: true }); } catch (e) { fetched = false; res.notes.push(`Could not fetch from ${remote}: ${firstLine(e)}`); }
+  try { await fetch(repo, { remote, prune: true }); } catch (e) { fetched = false; res.notes.push(`Could not reach ${remote}, so ${base} was not pulled and nothing was deleted there: ${firstLine(e)}`); }
 
   const st = await status(repo);
-  if (st.head !== base) {
-    if (await refExists(repo, `refs/heads/${base}`)) await git(repo, ['switch', base]);
-    else if (await refExists(repo, `refs/remotes/${remote}/${base}`)) await git(repo, ['switch', '-c', base, '--track', `${remote}/${base}`]);
-    else throw new Error(`The branch ${base} was not found here or on ${remote}.`);
-    res.switched = true;
+  const hasLocalBase = await refExists(repo, `refs/heads/${base}`);
+  const hasRemoteBase = await refExists(repo, `refs/remotes/${remote}/${base}`);
+  if (st.head !== base && (st.head === branch || !stay)) {
+    const dirty = st.staged.length + st.unstaged.length + st.untracked.length;
+    try {
+      if (!hasLocalBase && !hasRemoteBase) throw new Error(`it was not found here or on ${remote}`);
+      if (mode === 'stash' && dirty) { await stashPush(repo, { message: `Repodeck: before cleaning up ${branch}`, includeUntracked: true }); res.stashed = true; }
+      if (hasLocalBase) await git(repo, ['switch', base]);
+      else await git(repo, ['switch', '-c', base, '--track', `${remote}/${base}`]);
+      res.switched = true;
+    } catch (e) {
+      // put the changes back where they were rather than leave them in a stash on the old branch
+      if (res.stashed) { try { await git(repo, ['stash', 'pop', '--index']); res.stashed = false; } catch {} }
+      const elsewhere = (await worktrees(repo).catch(() => [])).find((w) => w.branch === base);
+      res.notes.push(elsewhere ? `Could not switch to ${base}: it is checked out in another worktree (${elsewhere.path}).`
+        : `Could not switch to ${base}: ${firstLine(e)}${dirty && mode !== 'stash' ? ' Commit or stash your changes and clean up again.' : ''}`);
+    }
   }
-  if (fetched) {
+  res.current = (await status(repo)).head;
+  if (fetched && res.current === base) {
     try { await pull(repo, { strategy }); res.pulled = true; } catch (e) { res.notes.push(`${base} was not pulled: ${firstLine(e)}`); }
+  } else if (fetched && hasLocalBase && hasRemoteBase) {
+    // not on the base: move it forward without checking it out (only ever a fast-forward)
+    try { await git(repo, ['fetch', '--quiet', remote, `refs/heads/${base}:refs/heads/${base}`], { timeout: NETWORK_TIMEOUT }); res.pulled = true; }
+    catch (e) { res.notes.push(`${base} was not updated: ${firstLine(e)}`); }
   }
 
-  // Merged means: nothing on the branch that the pull request (or the base, now pulled) does not have.
-  const merged = async (oid) => oid === headOid || (headOid && await refExists(repo, headOid) && await within(oid, headOid)) || within(oid, 'HEAD');
+  // Merged means: nothing on the branch that the pull request (or the base, as it is now) does not have.
+  const baseRef = fetched && hasRemoteBase ? `refs/remotes/${remote}/${base}` : hasLocalBase ? `refs/heads/${base}` : null;
+  const merged = async (oid) => oid === headOid || (headOid && await refExists(repo, headOid) && await within(oid, headOid)) || (baseRef && await within(oid, baseRef));
   const local = await tip(`refs/heads/${branch}`);
   if (local) {
-    if (await merged(local)) { await git(repo, ['branch', '-D', branch]); res.localDeleted = true; }
-    else res.notes.push(`The local branch ${branch} has commits that were not part of the pull request, so it was kept.`);
+    if (res.current === branch) res.notes.push(`The local branch ${branch} is still checked out, so it was kept.`);
+    else if (!(await merged(local))) { res.keptLocal = true; res.notes.push(`The local branch ${branch} has commits that were not part of the pull request, so it was kept.`); }
+    else {
+      try { await git(repo, ['branch', '-D', branch]); res.localDeleted = true; }
+      catch (e) { res.notes.push(`The local branch ${branch} was not deleted: ${firstLine(e)}`); }
+    }
   }
   const rtip = deleteRemote && fetched ? await tip(`refs/remotes/${remote}/${branch}`) : null;
   if (rtip) {
     if (await merged(rtip)) {
       try { await deleteRemoteBranch(repo, { remote, name: branch }); res.remoteDeleted = true; } catch (e) { res.notes.push(`${remote}/${branch} was not deleted: ${firstLine(e)}`); }
-    } else res.notes.push(`${remote}/${branch} has commits that were not part of the pull request, so it was kept.`);
+    } else { res.keptRemote = true; res.notes.push(`${remote}/${branch} has commits that were not part of the pull request, so it was kept.`); }
   }
   return res;
 }
