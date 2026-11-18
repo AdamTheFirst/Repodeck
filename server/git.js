@@ -609,6 +609,53 @@ async function deleteRemoteBranch(repo, { remote, name }) {
   assertName(name); assertName(remote, 'remote');
   await git(repo, ['push', remote, '--delete', `refs/heads/${name}`], { timeout: NETWORK_TIMEOUT });
 }
+/**
+ * After a pull request was merged on the remote: switch to the base branch, pull it, and delete the
+ * merged branch locally and on the remote. A branch that holds commits the pull request did not
+ * contain is kept. Only a failed switch stops the rest; other failures are reported in `notes`.
+ * headOid: the pull request's last commit, used to tell whether a branch has anything newer.
+ */
+async function finishMerged(repo, { branch, base, remote = 'origin', headOid, deleteRemote = true, strategy = 'ff-only' }) {
+  assertName(branch); assertName(base); assertName(remote, 'remote');
+  if (headOid) assertRev(headOid);
+  if (branch === base) throw new Error(`${branch} is the base branch.`);
+  const ops = await opState(repo);
+  if (ops.inProgress.length) throw new Error(`A ${ops.inProgress[0]} is in progress. Finish or abort it first.`);
+  const res = { base, branch, switched: false, pulled: false, localDeleted: false, remoteDeleted: false, notes: [] };
+  const tip = async (ref) => { try { return (await qout(repo, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim(); } catch { return null; } };
+  const within = async (oid, target) => { try { await quiet(repo, ['merge-base', '--is-ancestor', oid, target]); return true; } catch { return false; } };
+
+  let fetched = true;
+  try { await fetch(repo, { remote, prune: true }); } catch (e) { fetched = false; res.notes.push(`Could not fetch from ${remote}: ${firstLine(e)}`); }
+
+  const st = await status(repo);
+  if (st.head !== base) {
+    if (await refExists(repo, `refs/heads/${base}`)) await git(repo, ['switch', base]);
+    else if (await refExists(repo, `refs/remotes/${remote}/${base}`)) await git(repo, ['switch', '-c', base, '--track', `${remote}/${base}`]);
+    else throw new Error(`The branch ${base} was not found here or on ${remote}.`);
+    res.switched = true;
+  }
+  if (fetched) {
+    try { await pull(repo, { strategy }); res.pulled = true; } catch (e) { res.notes.push(`${base} was not pulled: ${firstLine(e)}`); }
+  }
+
+  // Merged means: nothing on the branch that the pull request (or the base, now pulled) does not have.
+  const merged = async (oid) => oid === headOid || (headOid && await refExists(repo, headOid) && await within(oid, headOid)) || within(oid, 'HEAD');
+  const local = await tip(`refs/heads/${branch}`);
+  if (local) {
+    if (await merged(local)) { await git(repo, ['branch', '-D', branch]); res.localDeleted = true; }
+    else res.notes.push(`The local branch ${branch} has commits that were not part of the pull request, so it was kept.`);
+  }
+  const rtip = deleteRemote && fetched ? await tip(`refs/remotes/${remote}/${branch}`) : null;
+  if (rtip) {
+    if (await merged(rtip)) {
+      try { await deleteRemoteBranch(repo, { remote, name: branch }); res.remoteDeleted = true; } catch (e) { res.notes.push(`${remote}/${branch} was not deleted: ${firstLine(e)}`); }
+    } else res.notes.push(`${remote}/${branch} has commits that were not part of the pull request, so it was kept.`);
+  }
+  return res;
+}
+function firstLine(e) { return String((e && e.message) || e).trim().split('\n').pop(); }
+
 async function setUpstream(repo, { branch, upstream }) { assertName(branch); assertRev(upstream); await git(repo, ['branch', `--set-upstream-to=${upstream}`, branch]); }
 
 async function merge(repo, { rev, noFf, squash, message }) {
@@ -962,7 +1009,7 @@ module.exports = {
   discard, discardAll, listBackups, restoreBackup,
   commit, undoLastCommit, lastCommitMessage, rewordLast, squashLast, unpushedCount, isPushed,
   fetch, pull, push, sync,
-  refs, createBranch, switchBranch, checkoutDetached, renameBranch, deleteBranch, deleteRemoteBranch, setUpstream, branchMergedInto,
+  refs, createBranch, switchBranch, checkoutDetached, renameBranch, deleteBranch, deleteRemoteBranch, finishMerged, setUpstream, branchMergedInto,
   merge, rebase, cherryPick, revert, reset, dropCommit, continueOp, abortOp, skipOp,
   conflictFile, resolveConflictFile, takeSide, acceptDeletion, markResolved,
   createTag, deleteTag, pushTag, deleteRemoteTag,

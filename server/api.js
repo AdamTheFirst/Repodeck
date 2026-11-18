@@ -105,6 +105,11 @@ async function afterPush(r, res, reason) {
   } catch (e) { log.warn('Could not start tracking', { error: e.message }); }
 }
 
+/** The local branch a pull request is checked out as: its own name, or "pr-N-name" when it comes from a fork. */
+function prLocalName(pr) {
+  return pr.isCrossRepository ? `pr-${pr.number}-${pr.headRefName}`.replace(/[^A-Za-z0-9._/-]/g, '-') : pr.headRefName;
+}
+
 // ---------------- PR drafts (pending inline review comments) ----------------
 
 function draftFile(p) { return path.join(paths.drafts, `${p.id}-${+p.number}.json`); }
@@ -621,7 +626,10 @@ const H = {
     const pr = await gh.prView(s, p.number);
     const r = repo(p);
     const local = await git.refs(r).catch(() => ({ local: [] }));
-    pr.localBranch = (local.local.find((b) => !pr.isCrossRepository && b.name === pr.headRefName) || {}).name || null;
+    const name = prLocalName(pr);
+    pr.localBranch = (local.local.find((b) => b.name === name) || {}).name || null;
+    // still on the remote as far as this clone knows (as of the last fetch)
+    pr.remoteBranch = !pr.isCrossRepository && await git.refExists(r, `refs/remotes/${s.remote || 'origin'}/${pr.headRefName}`);
     return pr;
   },
   'pr.diff': async (p) => presentDiff(Buffer.from(await gh.prDiff(slug(p), p.number), 'utf8').toString('latin1'), { full: p.full }),
@@ -697,6 +705,16 @@ const H = {
     if (!p.auto) trackMergeCommit(p.id, s, p.number);
     return res;
   },
+  // After a merge: switch to the base branch, pull it, delete the merged branch here and on GitHub.
+  'pr.cleanup': (p) => mutate(p, `Clean up after PR #${p.number}`, async (r) => {
+    const s = slug(p);
+    const pr = await gh.prView(s, p.number);
+    if (pr.state !== 'MERGED') throw new Error(`Pull request #${pr.number} is not merged yet.`);
+    return git.finishMerged(r, {
+      branch: prLocalName(pr), base: pr.baseRefName, remote: s.remote || 'origin', headOid: pr.headRefOid,
+      deleteRemote: !pr.isCrossRepository, strategy: config.get().pullStrategy,
+    });
+  }),
   'pr.checkout': (p) => mutate(p, `Check out PR #${p.number}`, async (r) => {
     const s = slug(p);
     const pr = await gh.prView(s, p.number);
@@ -710,7 +728,7 @@ const H = {
       await git.fetch(r, { remote: rem });
       return git.switchBranch(r, { name: pr.headRefName, remoteRef: `${rem}/${pr.headRefName}` });
     }
-    const local = `pr-${pr.number}-${pr.headRefName}`.replace(/[^A-Za-z0-9._/-]/g, '-');
+    const local = prLocalName(pr);
     await git.git(r, ['fetch', rem, `refs/pull/${pr.number}/head`], { timeout: 5 * 60_000 });
     if (await git.refExists(r, `refs/heads/${local}`)) {
       await git.git(r, ['switch', local]);

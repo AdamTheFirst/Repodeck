@@ -148,8 +148,10 @@ function detail(view, r, number) {
     mount(main,
       h('div', { class: 'comment' }, h('div', { class: 'chead' }, h('strong', null, pr.author ? pr.author.login : ''), h('span', { class: 'muted' }, `opened ${ago(pr.createdAt)}`)), h('div', { class: 'cbody' }, markdown(pr.body))),
       events.map((e) => e.node),
-      pr.state === 'OPEN' ? mergeBox() : pr.state === 'MERGED' ? h('div', { class: 'info-box', style: { marginBottom: '10px' } }, `Merged ${pr.mergedAt ? ago(pr.mergedAt) : ''}${pr.mergedBy ? ` by ${pr.mergedBy.login}` : ''}${pr.mergeCommit ? ` as ${pr.mergeCommit.oid.slice(0, 8)}` : ''}.`, ' ',
-        h('a', { onclick: () => navigate('#/board') }, 'See its workflow runs on the Actions board')) : null,
+      pr.state === 'OPEN' ? mergeBox() : pr.state === 'MERGED' ? h('div', { class: 'info-box row', style: { marginBottom: '10px' } },
+        h('span', { class: 'grow' }, `Merged ${pr.mergedAt ? ago(pr.mergedAt) : ''}${pr.mergedBy ? ` by ${pr.mergedBy.login}` : ''}${pr.mergeCommit ? ` as ${pr.mergeCommit.oid.slice(0, 8)}` : ''}.`, ' ',
+          h('a', { onclick: () => navigate('#/board') }, 'See its workflow runs on the Actions board')),
+        pr.localBranch || pr.remoteBranch ? btn('Clean up branch', () => cleanup(true), { cls: 'small', iconName: 'trash', title: `Switch to ${pr.baseRefName}, pull, and delete ${pr.localBranch || pr.headRefName}` }) : null) : null,
       h('div', { class: 'col' }, commentBox, h('div', { class: 'row' }, h('span', { class: 'spacer' }),
         btn('Comment', async () => { if (!commentBox.value.trim()) return; const ok = await act(() => rpc('pr.comment', { id: r.id, number, body: commentBox.value }), { ok: 'Comment posted' }); if (ok !== undefined) { commentBox.value = ''; load(); } }, { cls: 'primary' }))));
     // sidebar
@@ -224,6 +226,7 @@ function detail(view, r, number) {
     const subj = h('input', { type: 'text', style: { width: '100%' }, value: method === 'squash' ? `${pr.title} (#${pr.number})` : `Merge pull request #${pr.number} from ${pr.headRepositoryOwner ? pr.headRepositoryOwner.login : ''}/${pr.headRefName}` });
     const msgBody = h('textarea', { rows: 3, style: { width: '100%' } }, method === 'squash' ? pr.commits.map((c) => `* ${c.messageHeadline}`).join('\n') : pr.title);
     const delBranch = h('input', { type: 'checkbox', checked: meta ? !!meta.delete_branch_on_merge || prefs.get('deleteAfterMerge', true) : prefs.get('deleteAfterMerge', true), disabled: pr.isCrossRepository });
+    const tidy = h('input', { type: 'checkbox', checked: prefs.get('cleanupAfterMerge', false) });
     const sel = h('select', { onchange: (e) => { prefs.set(`mergeMethod.${r.id}`, e.target.value); renderBody(); } }, allowed.map(([k, , l]) => h('option', { value: k, selected: k === method }, l)));
     return h('div', { class: 'panel', style: { marginBottom: '12px' } },
       h('div', { class: 'panel-head' }, icon('merge'), h('h3', { class: 'grow' }, 'Merge'), sel),
@@ -231,20 +234,24 @@ function detail(view, r, number) {
         method !== 'rebase' ? h('label', { class: 'field' }, h('span', null, 'Commit title'), subj) : null,
         method !== 'rebase' ? h('label', { class: 'field' }, h('span', null, 'Commit message'), msgBody) : null,
         h('label', { class: 'check' }, delBranch, `Delete branch ${pr.headRefName} on GitHub after merging`, pr.isCrossRepository ? h('span', { class: 'faint' }, ' (fork: not possible)') : null),
+        h('label', { class: 'check' }, tidy, `Then switch to ${pr.baseRefName} here, pull, and delete the local branch`),
         h('div', { class: 'row' }, h('span', { class: 'spacer' }),
           meta && meta.allow_auto_merge !== false && !pr.autoMergeRequest ? btn('Enable auto-merge', () => doMerge(true), { cls: '', title: 'Merge automatically when requirements are met' }) : null,
           btn('Merge pull request', () => doMerge(false), { cls: 'primary', disabled: conflicts || pr.isDraft }))));
     async function doMerge(auto) {
       prefs.set('deleteAfterMerge', delBranch.checked);
+      prefs.set('cleanupAfterMerge', tidy.checked);
+      const tidyUp = tidy.checked && !auto;
       const ok = await confirmDanger({
         title: auto ? 'Enable auto-merge?' : `Merge #${number}?`,
-        message: `${auto ? 'When all requirements are met, GitHub will merge' : 'Merge'} ${pr.commits.length} commit(s) from ${pr.headRefName} into ${pr.baseRefName} using "${allowed.find((a) => a[0] === method)[2]}". Only the commits you see here (head ${pr.headRefOid.slice(0, 8)}) will be merged.${delBranch.checked && !auto ? ` The branch ${pr.headRefName} will be deleted on GitHub.` : ''}`,
+        message: `${auto ? 'When all requirements are met, GitHub will merge' : 'Merge'} ${pr.commits.length} commit(s) from ${pr.headRefName} into ${pr.baseRefName} using "${allowed.find((a) => a[0] === method)[2]}". Only the commits you see here (head ${pr.headRefOid.slice(0, 8)}) will be merged.${delBranch.checked && !auto ? ` The branch ${pr.headRefName} will be deleted on GitHub.` : ''}${tidyUp ? ` Then this folder switches to ${pr.baseRefName}, pulls, and the local branch is deleted.` : ''}`,
         confirmLabel: auto ? 'Enable auto-merge' : 'Merge', danger: false,
       });
       if (!ok) return;
       try {
         const res = await rpc('pr.merge', { id: r.id, number, method, subject: subj.value, body: msgBody.value, auto, headOid: pr.headRefOid, deleteBranch: delBranch.checked, headRef: pr.headRefName, crossRepo: pr.isCrossRepository });
         banner({ level: 'success', title: auto ? 'Auto-merge enabled' : `Merged #${number}`, body: auto ? null : `Tracking the workflow runs on ${pr.baseRefName}. You will get a notification when they finish.${res.deleteError ? `\nBranch not deleted: ${res.deleteError}` : ''}`, timeout: 8000, actions: auto ? [] : [{ label: 'Open Actions board', action: () => navigate('#/board') }] });
+        if (tidyUp) await cleanup(false);
         load();
       } catch (e) { showError(e, 'Merge failed'); }
     }
@@ -351,6 +358,25 @@ function detail(view, r, number) {
         statusBadge(c.status === 'completed' || c.conclusion ? 'completed' : c.status, c.conclusion), h('div', { class: 'grow' }, h('div', null, c.name), h('div', { class: 'sub' }, c.workflow || '')),
         c.startedAt && c.completedAt ? h('span', { class: 'faint' }, `${Math.round((Date.parse(c.completedAt) - Date.parse(c.startedAt)) / 1000)}s`) : null,
         c.url ? iconBtn('external', 'Open on GitHub', () => rpc('open.url', { url: c.url })) : null))) : h('div', { class: 'empty' }, 'No checks reported.')));
+  }
+
+  // ----- after the merge -----
+  async function cleanup(ask) {
+    const name = pr.localBranch || pr.headRefName;
+    if (ask && !(await confirmDanger({
+      title: 'Clean up after the merge?',
+      message: `Switch to ${pr.baseRefName} and pull it, then delete the branch ${name} in this folder${pr.isCrossRepository ? '' : ' and on GitHub'}. A branch with commits that were not part of this pull request is kept.`,
+      confirmLabel: 'Clean up', danger: false,
+    }))) return;
+    try {
+      const res = await rpc('pr.cleanup', { id: r.id, number });
+      const done = [
+        res.switched ? `Switched to ${res.base}` : null, res.pulled ? `pulled ${res.base}` : null,
+        res.localDeleted ? `deleted the local branch ${res.branch}` : null, res.remoteDeleted ? `deleted ${res.branch} on GitHub` : null,
+      ].filter(Boolean).join(', ');
+      banner({ level: res.notes.length ? 'warn' : 'success', title: done ? `${done[0].toUpperCase()}${done.slice(1)}` : 'Nothing left to clean up', body: res.notes.join('\n') || null, timeout: res.notes.length ? 12000 : 5000 });
+    } catch (e) { showError(e, 'Could not clean up'); }
+    if (ask) load();
   }
 
   // ----- edits -----
