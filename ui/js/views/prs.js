@@ -400,7 +400,9 @@ function detail(view, r, number) {
       ].filter(Boolean).join(', ');
       const notes = [...res.notes];
       if (res.stashed) notes.unshift('Your uncommitted changes are in a stash.');
-      banner({ level: res.notes.length ? 'warn' : 'success', title: done ? `${done[0].toUpperCase()}${done.slice(1)}` : 'Nothing was cleaned up', body: notes.join('\n') || null, timeout: res.notes.length ? 15000 : 6000,
+      // the title stays short (it is cut off at one line); what happened goes in the text below it
+      if (done) notes.unshift(`${done[0].toUpperCase()}${done.slice(1)}.`);
+      banner({ level: res.notes.length ? 'warn' : 'success', title: !done ? 'Nothing was cleaned up' : res.notes.length ? `Cleaned up after #${number}, with something left` : `Cleaned up after #${number}`, body: notes.join('\n') || null, timeout: res.notes.length ? 15000 : 6000,
         actions: [
           res.stashed ? { label: 'Open stashes', action: () => navigate(`#/repo/${r.id}/stashes`) } : null,
           // kept because of extra commits: the decision is yours
