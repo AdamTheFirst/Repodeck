@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Pull requests: after a merge, one step switches to the base branch, pulls it, and deletes the merged branch in your folder and on GitHub. Tick it in the merge box, or use "Clean up branch" on a pull request that is already merged. A branch with commits that were not part of the pull request is kept
+
 ## 1.1.2
 
 - Every repository tab shows a count when there is something under it: unpushed commits, branches, stashes, open pull requests, open issues, failing or running workflow runs

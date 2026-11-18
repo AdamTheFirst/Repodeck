@@ -349,3 +349,38 @@ test('paths outside the repository are refused', () => {
   assert.throws(() => G.safeJoin('C:\\repo', '..\\other\\file'), /outside/);
   assert.throws(() => G.safeJoin('/repo', '../etc/passwd'), /outside/);
 });
+
+test('after a merged pull request: switch to the base, pull, delete the branch here and on the remote', async (t) => {
+  const { root, dir, remote, repo } = setup(t);
+  // a squash merge: the base gets a new commit that is not an ancestor of the branch
+  g(dir, 'switch', '-q', '-c', 'feature/x');
+  write(dir, 'b.txt', 'b\n'); g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', 'feature');
+  g(dir, 'push', '-q', '-u', 'origin', 'feature/x');
+  const head = g(dir, 'rev-parse', 'HEAD').trim();
+  const other = path.join(root, 'other');
+  g(root, 'clone', '-q', remote, other);
+  g(other, 'config', 'user.name', 'Test User'); g(other, 'config', 'user.email', 'test@example.com');
+  g(other, 'merge', '-q', '--squash', 'origin/feature/x'); g(other, 'commit', '-q', '-m', 'feature (#1)'); g(other, 'push', '-q', 'origin', 'main');
+
+  const res = await G.finishMerged(repo, { branch: 'feature/x', base: 'main', headOid: head });
+  assert.deepEqual({ ...res, notes: res.notes.length }, { base: 'main', branch: 'feature/x', switched: true, pulled: true, localDeleted: true, remoteDeleted: true, notes: 0 });
+  assert.equal(g(dir, 'branch', '--show-current').trim(), 'main');
+  assert.equal(read(dir, 'b.txt'), 'b\n', 'the merge was pulled');
+  assert.equal(g(dir, 'branch', '-a', '--list', '*feature*').trim(), '');
+  assert.equal(g(remote, 'branch', '--list', 'feature/x').trim(), '');
+
+  // commits made after the pull request's last commit are never thrown away
+  g(dir, 'switch', '-q', '-c', 'feature/y');
+  write(dir, 'c.txt', 'c\n'); g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', 'in the pr');
+  g(dir, 'push', '-q', '-u', 'origin', 'feature/y');
+  const prHead = g(dir, 'rev-parse', 'HEAD').trim();
+  write(dir, 'd.txt', 'd\n'); g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', 'later, not pushed');
+  const kept = await G.finishMerged(repo, { branch: 'feature/y', base: 'main', headOid: prHead });
+  assert.equal(kept.localDeleted, false);
+  assert.equal(kept.remoteDeleted, true, 'the remote branch is exactly the pull request, so it goes');
+  assert.match(kept.notes.join(' '), /feature\/y has commits that were not part of the pull request/);
+  assert.equal(g(dir, 'branch', '--list', 'feature/y').trim(), 'feature/y');
+  assert.equal(g(dir, 'branch', '--show-current').trim(), 'main');
+
+  await assert.rejects(G.finishMerged(repo, { branch: 'main', base: 'main' }), /base branch/);
+});

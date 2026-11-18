@@ -92,6 +92,7 @@ Requirements: Windows 10 or 11.
 - Lists for yours, review requested, assigned, merged and closed.
 - Conversation, files, commits and checks; inline review comments and suggested changes.
 - Create with template and reviewers, check out (forks too), update branch, merge and auto-merge.
+- After a merge: switch to the base branch, pull, and delete the merged branch locally and on GitHub in one step.
 
 **GitHub Actions**
 - A board with the latest run on the default branch of every repository, using one GitHub request per account.
