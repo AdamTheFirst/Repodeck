@@ -399,11 +399,28 @@ async function switchAccount(login) {
 
 // ---------- timers ----------
 
+// The board view reports itself open on entry and then once a minute; without a report for five minutes
+// (window closed or in the background) the poll falls back to the slower background rate.
 let boardVisible = 0;
-function setBoardVisible(v) { boardVisible = v ? Date.now() : 0; if (v) pollBoard(); }
+let boardTimer = null;
+let started = false;
+const boardFast = () => !!boardVisible && Date.now() - boardVisible < 5 * 60_000;
+async function boardLoop() {
+  clearTimeout(boardTimer);
+  try { await pollBoard(); } catch (e) { log.warn('Timer task failed', { error: e.message }); }
+  if (!started) return;
+  clearTimeout(boardTimer);
+  boardTimer = setTimeout(boardLoop, Math.max(5, boardFast() ? config.get().boardRefreshSeconds : config.get().actionsRefreshSeconds) * 1000);
+}
+function setBoardVisible(v) {
+  const was = boardFast();
+  boardVisible = v ? Date.now() : 0;
+  if (v && !was) boardLoop(); // poll now and restart the timer at the faster rate
+}
 
 const timers = [];
 function start() {
+  started = true;
   const tick = (fn, secondsFn) => {
     const loop = async () => {
       try { await fn(); } catch (e) { log.warn('Timer task failed', { error: e.message }); }
@@ -413,7 +430,7 @@ function start() {
   };
   ensureAccount().then(() => { loadAccountState(); loadCache(); bus.emit('repos', list()); bus.emit('trackers', visibleTrackers()); }).then(scan).then(refreshAll).then(pollBoard).catch((e) => log.error('Initial scan failed', { error: e.message }));
   tick(async () => { if (Date.now() - lastScan > 10 * 60_000) await scan(); await refreshAll(); }, () => config.get().refreshSeconds);
-  tick(pollBoard, () => (boardVisible && Date.now() - boardVisible < 5 * 60_000 ? config.get().boardRefreshSeconds : config.get().actionsRefreshSeconds));
+  boardTimer = setTimeout(boardLoop, 1000);
   tick(pollTrackers, () => config.get().trackedRefreshSeconds);
   tick(pollMyPrs, () => Math.max(60, config.get().actionsRefreshSeconds));
   tick(async () => {
@@ -427,7 +444,7 @@ function start() {
   }, () => config.get().backgroundFetchMinutes * 60);
 }
 
-function stop() { for (const t of timers) clearTimeout(t); for (const id of watchers.keys()) unwatch(id); }
+function stop() { started = false; clearTimeout(boardTimer); for (const t of timers) clearTimeout(t); for (const id of watchers.keys()) unwatch(id); }
 
 module.exports = {
   bus, scan, list, get, slugOf, refresh, refreshAll, resolveSlug, pollBoard, boardFor, setBoardVisible,
