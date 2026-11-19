@@ -5,6 +5,7 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 ## 1.2.0
 
 - Pull requests: after a merge, one step switches to the base branch, pulls it, and deletes the merged branch in your folder and on GitHub. Tick it in the merge box, or use "Clean up branch" on a pull request that is already merged. It asks first when you have uncommitted changes (stash or bring along) or are on an unrelated branch (stay or switch). A branch with commits that were not part of the pull request is kept, with a button to delete it anyway. Whatever could not be done is explained, and the rest still happens
+- Actions board: checks for new runs the moment you open it and keeps the faster refresh for as long as it is on screen. Before, the first refresh could take up to two minutes, and the board slowed down again after five
 
 ## 1.1.2
 
