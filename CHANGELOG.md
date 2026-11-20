@@ -2,6 +2,10 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## 1.2.1
+
+- Pull requests: while a merge runs, the page is dimmed, says what is happening (merging, cleaning up, refreshing) and cannot be clicked, until the merged state is on screen. Before, nothing happened for a few seconds and the page could stay on the open pull request after the message. The same goes for close, reopen, draft and ready, update branch, check out, clean up and posting a comment
+
 ## 1.2.0
 
 - Pull requests: after a merge, one step switches to the base branch, pulls it, and deletes the merged branch in your folder and on GitHub. Tick it in the merge box, or use "Clean up branch" on a pull request that is already merged. It asks first when you have uncommitted changes (stash or bring along) or are on an unrelated branch (stay or switch). A branch with commits that were not part of the pull request is kept, with a button to delete it anyway. Whatever could not be done is explained, and the rest still happens
