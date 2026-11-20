@@ -82,7 +82,23 @@ function detail(view, r, number) {
   const top = h('div', { class: 'repo-head', style: { background: 'var(--panel)' } });
   const tabs = h('div', { class: 'tabs' });
   const body = h('div', { class: 'view' });
-  mount(view, h('div', { class: 'pane', style: { flex: 1 } }, top, tabs, body));
+  const veil = h('div', { class: 'busy-veil hidden', role: 'status', 'aria-live': 'polite' });
+  mount(view, h('div', { class: 'pane busy-host', style: { flex: 1 } }, top, tabs, body, veil));
+
+  // While something is being changed on GitHub or in the folder: say what, and block every action on the page.
+  let busy = false;
+  function setBusy(label) {
+    for (const el of [top, tabs, body]) el.inert = !!label;
+    veil.classList.toggle('hidden', !label);
+    mount(veil, label ? h('div', { class: 'busy-card' }, icon('refresh', 'spin'), h('span', null, label)) : null);
+  }
+  async function busyWhile(label, fn) {
+    if (busy) return undefined;
+    busy = true; setBusy(label);
+    try { return await fn(); } finally { busy = false; setBusy(null); }
+  }
+  /** One action, then a reload, with the page blocked until the new state is on screen. */
+  const run = (label, fn, ok) => busyWhile(label, async () => { const res = await act(fn, { ok }); await load(); return res; });
 
   async function load(full = true) {
     try {
@@ -112,10 +128,10 @@ function detail(view, r, number) {
   }
   function moreMenu() {
     return [
-      pr.state === 'OPEN' ? { label: pr.isDraft ? 'Mark ready for review' : 'Convert to draft', icon: 'eye', action: () => act(() => rpc('pr.ready', { id: r.id, number, ready: pr.isDraft }), { ok: pr.isDraft ? 'Ready for review' : 'Converted to draft' }).then(() => load()) } : null,
-      pr.state === 'OPEN' ? { label: 'Update branch from base', icon: 'merge', action: () => act(() => rpc('pr.updateBranch', { id: r.id, number }), { ok: 'Branch update requested' }).then(() => load()) } : null,
-      pr.state === 'OPEN' ? { label: 'Close pull request…', icon: 'x', danger: true, action: async () => { if (await confirmDanger({ title: 'Close pull request?', message: `Close #${number} without merging. It can be reopened later.`, confirmLabel: 'Close' })) act(() => rpc('pr.close', { id: r.id, number }), { ok: 'Closed' }).then(() => load()); } } : null,
-      pr.state === 'CLOSED' ? { label: 'Reopen', icon: 'undo', action: () => act(() => rpc('pr.reopen', { id: r.id, number }), { ok: 'Reopened' }).then(() => load()) } : null,
+      pr.state === 'OPEN' ? { label: pr.isDraft ? 'Mark ready for review' : 'Convert to draft', icon: 'eye', action: () => run(pr.isDraft ? 'Marking as ready for review…' : 'Converting to draft…', () => rpc('pr.ready', { id: r.id, number, ready: pr.isDraft }), pr.isDraft ? 'Ready for review' : 'Converted to draft') } : null,
+      pr.state === 'OPEN' ? { label: 'Update branch from base', icon: 'merge', action: () => run('Updating the branch…', () => rpc('pr.updateBranch', { id: r.id, number }), 'Branch update requested') } : null,
+      pr.state === 'OPEN' ? { label: 'Close pull request…', icon: 'x', danger: true, action: async () => { if (await confirmDanger({ title: 'Close pull request?', message: `Close #${number} without merging. It can be reopened later.`, confirmLabel: 'Close' })) run(`Closing #${number}…`, () => rpc('pr.close', { id: r.id, number }), 'Closed'); } } : null,
+      pr.state === 'CLOSED' ? { label: 'Reopen', icon: 'undo', action: () => run(`Reopening #${number}…`, () => rpc('pr.reopen', { id: r.id, number }), 'Reopened') } : null,
       { label: 'Copy link', icon: 'copy', action: () => copyText(pr.url) },
     ];
   }
@@ -153,7 +169,7 @@ function detail(view, r, number) {
           h('a', { onclick: () => navigate('#/board') }, 'See its workflow runs on the Actions board')),
         pr.localBranch || pr.remoteBranch ? btn('Clean up branch', () => cleanupNow(), { cls: 'small', iconName: 'trash', title: `Switch to ${pr.baseRefName}, pull, and delete ${pr.localBranch || pr.headRefName}` }) : null) : null,
       h('div', { class: 'col' }, commentBox, h('div', { class: 'row' }, h('span', { class: 'spacer' }),
-        btn('Comment', async () => { if (!commentBox.value.trim()) return; const ok = await act(() => rpc('pr.comment', { id: r.id, number, body: commentBox.value }), { ok: 'Comment posted' }); if (ok !== undefined) { commentBox.value = ''; load(); } }, { cls: 'primary' }))));
+        btn('Comment', async () => { if (!commentBox.value.trim()) return; await busyWhile('Posting the comment…', async () => { const ok = await act(() => rpc('pr.comment', { id: r.id, number, body: commentBox.value }), { ok: 'Comment posted' }); if (ok !== undefined) { commentBox.value = ''; await load(); } }); }, { cls: 'primary' }))));
     // sidebar
     const reviewers = new Map();
     for (const rq of pr.reviewRequests || []) reviewers.set(rq.login || rq.name || rq.slug, { state: 'requested' });
@@ -251,12 +267,15 @@ function detail(view, r, number) {
         confirmLabel: auto ? 'Enable auto-merge' : 'Merge', danger: false,
       });
       if (!ok) return;
-      try {
+      await busyWhile(auto ? 'Enabling auto-merge…' : `Merging #${number}…`, async () => { try {
         const res = await rpc('pr.merge', { id: r.id, number, method, subject: subj.value, body: msgBody.value, auto, headOid: pr.headRefOid, deleteBranch: delBranch.checked, headRef: pr.headRefName, crossRepo: pr.isCrossRepository });
         banner({ level: 'success', title: auto ? 'Auto-merge enabled' : `Merged #${number}`, body: auto ? (tidy.checked ? 'The clean-up cannot wait for the merge. Once it has merged, use "Clean up branch" on this page.' : null) : `Tracking the workflow runs on ${pr.baseRefName}. You will get a notification when they finish.${res.deleteError ? `\nBranch not deleted: ${res.deleteError}` : ''}`, timeout: 8000, actions: auto ? [] : [{ label: 'Open Actions board', action: () => navigate('#/board') }] });
-        if (tidyUp) await cleanup(plan);
-        load();
-      } catch (e) { showError(e, 'Merge failed'); }
+        if (tidyUp) { setBusy(`Cleaning up after #${number}…`); await cleanup(plan); }
+        setBusy('Refreshing…');
+        await load();
+        // GitHub can go on reporting the pull request as open for a moment after the merge
+        for (let i = 0; i < 4 && !auto && !disposed && pr.state === 'OPEN'; i++) { await new Promise((done) => setTimeout(done, 1500)); await load(); }
+      } catch (e) { showError(e, 'Merge failed'); } });
     }
   }
 
@@ -425,8 +444,7 @@ function detail(view, r, number) {
   async function cleanupNow() {
     const plan = await planCleanup(true);
     if (!plan) return;
-    await cleanup(plan);
-    load();
+    await busyWhile(`Cleaning up after #${number}…`, async () => { await cleanup(plan); await load(); });
   }
 
   // ----- edits -----
@@ -439,9 +457,8 @@ function detail(view, r, number) {
       if (!choice) return;
       mode = choice;
     }
-    const res = await act(() => rpc('pr.checkout', { id: r.id, number, mode }), { ok: (x) => `Checked out ${x.branch}` });
+    const res = await run(`Checking out #${number}…`, () => rpc('pr.checkout', { id: r.id, number, mode }), (x) => `Checked out ${x.branch}`);
     if (res && res.note) banner({ level: 'info', title: 'Pull request from a fork', body: res.note, timeout: 10000 });
-    load();
   }
   async function editPr() {
     const v = await form({ title: `Edit #${number}`, wide: true, fields: [
