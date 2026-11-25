@@ -223,9 +223,19 @@ export function render(view, r) {
     const res = await rpc('branch.compare', { id: r.id, a, b }).catch((e) => { showError(e); return null; });
     if (!res) return;
     const diff = createDiffView({});
-    const files = h('div', { class: 'pane-scroll', style: { maxHeight: '180px', borderBottom: '1px solid var(--border)' } },
-      res.files.map((f) => h('div', { class: 'file-row', onclick: async () => diff.set(await rpc('repo.diff', { id: r.id, kind: 'range', from: `${b}...${a}`, file: f.path })) },
-        h('span', { class: `st st-${f.status}` }, f.status), h('span', { class: 'name' }, f.path))));
+    let wanted = null;
+    const open = async (f, row) => {
+      rows.forEach((x) => x.classList.toggle('selected', x === row));
+      wanted = f.path;
+      const d = await rpc('repo.diff', { id: r.id, kind: 'range', from: `${b}...${a}`, file: f.path }).catch((e) => { showError(e); return null; });
+      if (d && wanted === f.path) diff.set(d); // a slower answer for a file clicked earlier is dropped
+    };
+    const rows = res.files.map((f) => { const row = h('div', { class: 'file-row', onclick: () => open(f, row) }, h('span', { class: `st st-${f.status}` }, f.status), h('span', { class: 'name' }, f.path)); return row; });
+    const files = h('div', { class: 'pane-scroll', style: { maxHeight: '180px', borderBottom: '1px solid var(--border)' } }, rows);
+    // The first file is opened at once, so the dialog never shows an empty box; with no files, there is no box.
+    const changes = res.files.length
+      ? [files, h('div', { style: { height: '40vh', display: 'flex' } }, diff.el)]
+      : [h('div', { class: 'faint' }, a === b ? 'Both sides are the same branch.' : `${a} has no changes of its own: nothing to show.`)];
     const commitList = (list) => (list.length ? list.slice(0, 50).map((c) => h('div', { class: 'row', style: { fontSize: '12px' } }, h('span', { class: 'mono muted' }, c.hash.slice(0, 8)), h('span', { class: 'ellipsis' }, c.subject))) : h('div', { class: 'faint' }, 'none'));
     modal({
       title: `${a} compared with ${b}`, wide: true,
@@ -233,9 +243,10 @@ export function render(view, r) {
         h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '24px' } },
           h('div', { class: 'grow' }, h('h3', null, `Only in ${a} (${res.ahead})`), commitList(res.onlyA)),
           h('div', { class: 'grow' }, h('h3', null, `Only in ${b} (${res.behind})`), commitList(res.onlyB))),
-        h('h3', null, `Files changed in ${a} since it diverged (${res.files.length})`), files, h('div', { style: { height: '40vh', display: 'flex' } }, diff.el)),
+        h('h3', null, `Files changed in ${a} since it diverged (${res.files.length})`), changes),
       actions: [{ label: 'Close', cls: 'primary', default: true, value: null }],
     });
+    if (res.files.length) open(res.files[0], rows[0]);
   }
 
   load();
