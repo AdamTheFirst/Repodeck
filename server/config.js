@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('node:fs');
 const { paths, writeJsonAtomic } = require('./paths');
+const { validName } = require('./prbase');
 
 const DEFAULTS = {
   version: 1,
@@ -31,13 +32,16 @@ const DEFAULTS = {
   editorArgs: ['{path}'],
   terminalCommand: 'wt',
   terminalArgs: ['-d', '{path}'],
-  theme: 'system',             // system | light | dark
+  theme: 'system',             // system | light | dark | ember | midnight | orchid | sand | sky
   favourites: [],
   skipHiddenOnFetch: true,     // Fetch all and the background fetch leave hidden repositories alone
   skipHiddenInActions: true,   // the Actions board does not check or show hidden repositories
   hidden: [],                 // repository paths moved to the sidebar's Hidden section
   bulkConcurrency: 6,
   defaultPrFilter: 'all',
+  copilotButtons: true,       // show the "write with Copilot" buttons (nothing is sent until one is pressed)
+  prBase: '',               // branch new pull requests open into where it exists ('' = the repository's default branch)
+  prBaseByRepo: {},           // "owner/repo" (lower case) -> branch, for repositories that differ from prBase
   firstRunDone: false,
 };
 
@@ -119,7 +123,7 @@ const VALID = {
   ignore: (v) => Array.isArray(v) && v.every((s) => typeof s === 'string'),
   pullStrategy: (v) => ['merge', 'rebase', 'ff-only'].includes(v),
   updateFromDefault: (v) => ['merge', 'rebase'].includes(v),
-  theme: (v) => ['system', 'light', 'dark'].includes(v),
+  theme: (v) => ['system', 'light', 'dark', 'ember', 'midnight', 'orchid', 'sand', 'sky'].includes(v), // the same ids as ui/js/themes.js
   editorArgs: (v) => Array.isArray(v),
   terminalArgs: (v) => Array.isArray(v),
   favourites: (v) => Array.isArray(v),
@@ -127,6 +131,8 @@ const VALID = {
   currentAccount: (v) => typeof v === 'string' && /^[A-Za-z0-9-]*$/.test(v),
   accountSsh: (v) => v && typeof v === 'object' && Object.values(v).every((x) => x && ['https', 'ssh'].includes(x.protocol) && (!x.host || /^[A-Za-z0-9._-]+$/.test(x.host))),
   savedFilters: (v) => v && typeof v === 'object',
+  prBase: (v) => validName(v),
+  prBaseByRepo: (v) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.entries(v).every(([k, b]) => /^[^/\s]+\/[^/\s]+$/.test(k) && b !== '' && validName(b)),
 };
 
 function update(patch) {

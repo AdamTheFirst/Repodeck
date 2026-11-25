@@ -2,7 +2,7 @@
 import { h, mount, icon, btn, iconBtn, act, menuAt, menuBelow, confirmDanger, form, prompt, banner, ago, fmtDate, copyText, debounce, showError } from '../dom.js';
 import { rpc } from '../api.js';
 import { fetchRepo } from '../fetch.js';
-import { store, prefs } from '../store.js';
+import { store, prefs, subscribe } from '../store.js';
 import { navigate } from '../router.js';
 import { createDiffView } from '../diffview.js';
 import { createBranchDialog, switchTo, push, pull } from '../repoview.js';
@@ -35,9 +35,10 @@ export function render(view, r, sub) {
   // ---------- toolbar ----------
   const search = h('input', { type: 'search', placeholder: 'Search message or hash', value: '', style: { width: '200px' } });
   let authors = null;   // [{ name, commits }], loaded once per visit
-  rpc('repo.authors', { id: r.id }).then((a) => { authors = a; if (!disposed) renderToolbar(); }).catch(() => { authors = []; });
+  rpc('repo.authors', { id: r.id }).then((a) => { authors = a; if (!disposed) renderToolbar(); }).catch(() => { authors = []; if (!disposed) renderToolbar(); });
   search.addEventListener('input', debounce(() => { filters.grep = search.value.trim(); reset(); }, 400));
   function renderToolbar() {
+    const typing = document.activeElement === search; // redrawing takes the box out for a moment; give the cursor back
     mount(toolbar,
       h('select', { title: 'Repository', style: { maxWidth: '220px' }, onchange: (e) => navigate(`#/repo/${e.target.value}/graph`) },
         store.repos.map((x) => h('option', { value: x.id, selected: x.id === r.id }, x.label))),
@@ -54,7 +55,8 @@ export function render(view, r, sub) {
       compareWith ? h('span', { class: 'badge accent' }, 'Comparing two commits', h('a', { onclick: () => { compareWith = null; showDetail(); renderRows(true); } }, ' ×')) : h('span', { class: 'faint', style: { fontSize: '12px' } }, 'Ctrl+click a second commit to compare'),
       btn('Jump to HEAD', () => jumpTo(meta && meta.head), { cls: 'small' }),
       btn('Fetch', () => fetchRepo(r).then(reset), { cls: 'small', iconName: 'fetch' }),
-      iconBtn('refresh', 'Reload graph', () => reset()));
+      iconBtn('refresh', 'Reload graph', () => reset(), 'small'));
+    if (typing) search.focus();
   }
   function branchFilterMenu(el) {
     if (!meta) return;
@@ -353,7 +355,7 @@ export function render(view, r, sub) {
     const isCur = name === cur();
     return [
       { header: true, label: name },
-      { label: 'Check out', icon: 'branch', disabled: isCur, action: () => switchTo(r, { name }).then(reset) },
+      { label: 'Switch to this branch', icon: 'branch', disabled: isCur, action: () => switchTo(r, { name }).then(reset) },
       { label: 'Rename…', icon: 'edit', action: async () => { const to = await prompt('Rename branch', 'New name', name); if (to && to !== name) act(() => rpc('branch.rename', { id: r.id, from: name, to }), { ok: 'Renamed' }).then(reset); } },
       { label: 'Delete…', icon: 'trash', danger: true, disabled: isCur, action: () => deleteBranch(name) },
       '-',
@@ -465,5 +467,15 @@ export function render(view, r, sub) {
   });
 
   reset();
-  return { dispose() { disposed = true; } };
+  // The header's Pull, Push and Fetch, a commit in Changes, a switch, F5, coming back from a terminal:
+  // look again, and redraw only when the history, the branches or the stashes really moved.
+  const sig = (m) => JSON.stringify([m.head, m.summary && [m.summary.branch, m.summary.dirty, m.summary.ahead, m.summary.behind], (m.stashes || []).length, m.refs]);
+  const follow = debounce(async () => {
+    if (disposed || !meta || loadingMore) return;
+    let m;
+    try { m = await rpc('repo.graphMeta', { id: r.id }); } catch { return; }
+    if (!disposed && meta && sig(m) !== sig(meta)) reset();
+  }, 500);
+  const unsub = subscribe('refresh', follow);
+  return { dispose() { disposed = true; unsub(); }, onSummary: follow };
 }

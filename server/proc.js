@@ -1,5 +1,7 @@
 // Safe process runner: argument arrays only, never a shell.
 'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
 const { spawn } = require('node:child_process');
 const log = require('./log');
 
@@ -147,4 +149,18 @@ function cancel(opId) {
   return true;
 }
 
-module.exports = { run, cancel, ProcError };
+/** Find a program on PATH, honouring PATHEXT (so "code" finds code.cmd). */
+function which(cmd) {
+  if (path.isAbsolute(cmd)) return fs.existsSync(cmd) ? cmd : null;
+  const exts = process.platform === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
+  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const f = path.join(dir, cmd + ext.toLowerCase());
+      try { if (fs.statSync(f).isFile()) return f; } catch {}
+    }
+  }
+  return null;
+}
+
+module.exports = { run, cancel, which, ProcError };

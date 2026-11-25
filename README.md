@@ -78,6 +78,7 @@ Requirements: Windows 10 or 11.
 - Stage, unstage or discard whole files, single hunks or individual lines.
 - Every discard keeps a safety copy for 30 days, restorable from "Recently discarded".
 - Commit, amend, undo, reword and squash; push, pull, fetch and sync; force push only with lease.
+- Optional: let GitHub Copilot write the commit message from the changes you are about to commit.
 - After a fetch, a plain statement of where the branch stands: how far behind, with a Pull button.
 - Branches, tags, remotes, worktrees, submodules and stashes.
 - Merge conflicts: accept current, incoming or both per conflict; continue, skip or abort.
@@ -92,6 +93,8 @@ Requirements: Windows 10 or 11.
 - Lists for yours, review requested, assigned, merged and closed.
 - Conversation, files, commits and checks; inline review comments and suggested changes.
 - Create with template and reviewers, check out (forks too), update branch, merge and auto-merge.
+- Always open pull requests into a branch you choose, such as `develop`, for one repository or for all of them.
+- Optional: let GitHub Copilot write the title and description from the branch's commits and diff.
 - After a merge: switch to the base branch, pull, and delete the merged branch locally and on GitHub in one step.
 
 **GitHub Actions**
@@ -103,6 +106,15 @@ Requirements: Windows 10 or 11.
 - Find every repository that has a feature branch, with its state, pull request and checks.
 - Switch, pull, push or update all of them, create the pull requests together, or merge them in order.
 - Bulk operations show what will run and what will be skipped, and why, before anything happens.
+
+**Appearance**
+- Follows Windows, or one of seven themes: Light, Sand and Sky are light; Dark, Ember, Midnight and Orchid are true black and differ in their accent colour.
+
+### Writing with GitHub Copilot
+
+The Copilot buttons are optional. They need the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli) on your computer and a Copilot plan on the open account; without the CLI the button says how to install it. A request counts against that account's Copilot allowance like any other.
+
+Nothing is sent until you press a Copilot button. Then Repodeck sends the text Copilot is to describe (the diff, the list of changed files and recent commit subjects, or a branch's commits) and nothing else. Copilot is started without any tools, so it cannot read or change files, and what it writes goes into the box for you to edit; nothing is committed or created by it. Turn the buttons off under Settings → Behaviour.
 
 ## Accounts and SSH
 
@@ -131,6 +143,7 @@ Each signed-in GitHub account is a separate workspace with its own folders, repo
 - Destructive actions ask first and say exactly what will be lost. Discards and hard resets keep a safety copy.
 - Failures show git's real output and the exact command; every command is listed under **Activity**.
 - The local server listens on `127.0.0.1` only and needs a per-start token. Repodeck never stores GitHub tokens.
+- The optional Copilot buttons send the changes they describe to GitHub Copilot, and only when you press one. See [PRIVACY.md](PRIVACY.md).
 - See [SECURITY.md](SECURITY.md) for the details and for how to report a vulnerability.
 
 ## Troubleshooting

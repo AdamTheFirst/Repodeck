@@ -2,6 +2,21 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- Pull requests can always open into a branch you choose, for example `develop`. Set it for every repository under Settings → Behaviour, or for one repository on the New pull request page ("Always use … for this repository"). The branch is used when the repository has it; otherwise the default branch is used and the page says so. Feature branches → Create pull requests follows the same setting
+- New pull request: changing the base branch reloads the commits, and the title and description as long as you have not edited them. The page uses the width of the window, with the commits beside the form
+- Write with Copilot: a button in the commit box writes the commit message from the changes about to be committed, and one on the New pull request page writes the title and description from the branch's commits and diff, filling in the repository's template when there is one. It runs the GitHub Copilot CLI as the open account, sends nothing until you press it, asks once, and can be undone. Hide the buttons under Settings → Behaviour
+- Five more themes: Ember (orange), Midnight (blue) and Orchid (violet) are dark, Sand and Sky are light. Settings → Appearance shows a preview of each
+- Every dark theme, Dark included, now has a true black background; the dark themes differ only in their accent colour
+- Buttons show a spinner and ignore a second click while their action runs, a thin line under the top bar shows when the app is waiting for an answer, and a repository's header buttons are off while an operation runs in it
+- The sidebar, the repository header and the open tab follow a change at once. After a merge with clean-up, the new branch and the counts are there without clicking the repository
+- The commit graph and the Branches tab reload when the repository changes underneath them. The Actions board and the review and failing counts at the top refresh after a pull request is created, closed, merged or reviewed
+- After a merge without clean-up the repository is fetched, so the base branch shows what there is to pull
+- Branch cleanup: "Fetch and prune all" prunes; before, it only fetched
+- Changes tab: the pane beside the file list says where the branch stands, shows its pull request and lists the commits waiting to be pushed
+- Smaller things on every page: placeholders while a page loads instead of an empty pane, search boxes that keep the cursor while the list updates, empty states that say what to do next, the same words for the same thing ("passed", "failed"), issue and pull request pages that use the window's width, and headings whose buttons no longer get squeezed
+
 ## 1.2.1
 
 - Pull requests: while a merge runs, the page is dimmed, says what is happening (merging, cleaning up, refreshing) and cannot be clicked, until the merged state is on screen. Before, nothing happened for a few seconds and the page could stay on the open pull request after the message. The same goes for close, reopen, draft and ready, update branch, check out, clean up and posting a comment

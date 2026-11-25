@@ -16,6 +16,8 @@ export function render(main) {
   const page = h('div', { class: 'page' });
   mount(main, page);
   let refreshing = false;
+  // Made once and kept across redraws: the board redraws on every update, and a new box each time lost the cursor.
+  const searchIn = h('input', { type: 'search', placeholder: 'Filter repositories', style: { width: '200px' }, oninput: (e) => { text = e.target.value; draw(); } });
 
   function repoFor(slug) {
     const key = `${slug.owner}/${slug.repo}`.toLowerCase();
@@ -47,20 +49,26 @@ export function render(main) {
       ['none', 'No runs on the latest commit', ''], ['error', 'Not available', 'bad'], ['loading', 'Loading', ''],
     ];
     const counts = Object.fromEntries(groups.map(([k]) => [k, entries.filter((e) => e.state === k).length]));
-    const searchIn = h('input', { type: 'search', placeholder: 'Filter repositories', value: text, style: { width: '200px' }, oninput: (e) => { text = e.target.value; draw(); const el = page.querySelector('input[type=search]'); if (el) { el.focus(); el.setSelectionRange(text.length, text.length); } } });
+    const typing = document.activeElement === searchIn;
+    const pickFilter = (k) => { filter = k; prefs.set('boardFilter', k); draw(); };
     mount(page,
-      h('div', { class: 'row', style: { marginBottom: '14px' } },
-        h('div', { class: 'page-head', style: { margin: 0 } }, h('div', null, h('h1', null, 'Actions'), h('div', { class: 'muted' }, store.boardAt ? `Latest run on each default branch · updated ${ago(store.boardAt)}${left ? ` · ${plural(left, 'hidden repository')} left out` : ''}` : 'Loading…'))),
+      h('div', { class: 'page-head' },
+        h('div', null, h('h1', null, 'Actions'), h('div', { class: 'muted' }, store.boardAt ? `Latest run on each default branch · updated ${ago(store.boardAt)}${left ? ` · ${plural(left, 'hidden repository')} left out` : ''}` : 'Loading…')),
         h('span', { class: 'spacer' }),
+        btn(refreshing ? 'Refreshing…' : 'Refresh', async () => { refreshing = true; draw(); await act(() => rpc('board.refresh')); await rpc('trackers.refresh').catch(() => {}); refreshing = false; draw(); }, { cls: `small${refreshing ? ' is-busy' : ''}`, iconName: 'refresh', disabled: refreshing })),
+      h('div', { class: 'row wrap', style: { marginBottom: '14px' } },
         h('div', { class: 'pill-tabs' }, [['all', `All (${entries.length})`], ['attention', `Needs attention (${counts.failure + counts.running})`], ['failure', `Failing (${counts.failure})`], ['running', `Running (${counts.running})`]]
-          .map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => { filter = k; prefs.set('boardFilter', k); draw(); } }, l))),
+          .map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => pickFilter(k) }, l))),
         searchIn,
         h('select', { title: 'Sort', onchange: (e) => { sort = e.target.value; prefs.set('boardSort', sort); draw(); } },
-          [['name', 'Sort by name'], ['recent', 'Most recent commit first']].map(([v, l]) => h('option', { value: v, selected: sort === v }, l))),
-        btn(refreshing ? 'Refreshing…' : 'Refresh', async () => { refreshing = true; draw(); await act(() => rpc('board.refresh')); await rpc('trackers.refresh').catch(() => {}); refreshing = false; draw(); }, { cls: 'small', iconName: 'refresh', disabled: refreshing })),
+          [['name', 'Sort by name'], ['recent', 'Most recent commit first']].map(([v, l]) => h('option', { value: v, selected: sort === v }, l)))),
 
-      h('div', { class: 'tiles' }, [[counts.failure, 'failing', 'var(--bad)'], [counts.running, 'running', 'var(--warn)'], [counts.success, 'passing', 'var(--ok)'], [counts.none + counts.other, 'no runs', 'var(--text)']]
-        .map(([n, label, color]) => h('div', { class: 'tile', style: { cursor: 'default' } }, h('div', { class: 'tile-n', style: { color: n ? color : 'var(--faint)' } }, n), h('div', { class: 'muted' }, label)))),
+      // The first three numbers are also filters: press one to see only those, press it again for all.
+      h('div', { class: 'tiles' },
+        [['failure', counts.failure, 'failing', 'var(--bad)'], ['running', counts.running, 'running', 'var(--warn)'], ['success', counts.success, 'passing', 'var(--ok)']]
+          .map(([k, n, label, color]) => h('button', { type: 'button', class: `tile ${filter === k ? 'active' : ''} ${n || filter === k ? '' : 'zero'}`, disabled: !n && filter !== k, title: filter === k ? 'Show all again' : `Show only the ${label} ones`, onclick: () => pickFilter(filter === k ? 'all' : k) },
+            h('div', { class: 'tile-n', style: { color: n ? color : 'var(--faint)' } }, n), h('div', { class: 'tile-l' }, label))),
+        h('div', { class: 'tile' }, h('div', { class: 'tile-n', style: { color: counts.none + counts.other ? 'var(--text)' : 'var(--faint)' } }, counts.none + counts.other), h('div', { class: 'tile-l' }, 'no runs'))),
 
       h('div', { class: 'section-title' }, h('h3', null, 'Tracked runs'), h('span', { class: 'faint' }, 'Your pushes and merges, followed until their workflows finish'),
         h('span', { class: 'spacer' }), doneT.length ? btn('Clear finished', () => act(() => rpc('trackers.clearDone')), { cls: 'small ghost' }) : null),
@@ -70,7 +78,9 @@ export function render(main) {
       groups.filter(([k]) => visible.some((e) => e.state === k)).map(([k, label, cls]) => h('div', { class: 'board-group' },
         h('div', { class: 'section-title' }, h('span', { class: `dot ${cls}` }), h('h3', null, `${label}`), h('span', { class: 'badge' }, visible.filter((e) => e.state === k).length)),
         h('div', { class: 'panel', style: { overflow: 'hidden' } }, visible.filter((e) => e.state === k).sort(order).map(boardRow)))),
-      !entries.length ? h('div', { class: 'empty' }, h('h3', null, 'No GitHub repositories'), h('div', null, 'Repositories whose remote points to GitHub show up here.')) : null);
+      !entries.length ? h('div', { class: 'empty' }, h('h3', null, 'No GitHub repositories'), h('div', null, 'Repositories whose remote points to GitHub show up here.'))
+        : !visible.length ? h('div', { class: 'empty' }, h('h3', null, 'Nothing matches'), h('div', null, 'No repository fits this filter. ', h('a', { onclick: () => { text = ''; searchIn.value = ''; pickFilter('all'); } }, 'Show all'))) : null);
+    if (typing) searchIn.focus();
   }
 
   function trackerCard(t) {
@@ -78,7 +88,7 @@ export function render(main) {
     const stateText = t.state === 'waiting' ? `Waiting for workflows to start (${duration(new Date(t.createdAt).toISOString())})`
       : t.state === 'running' ? `${t.runs.filter((x) => x.status !== 'completed').length} of ${t.runs.length} running`
         : t.state === 'no-runs' ? 'No workflow runs started for this commit'
-          : t.conclusion === 'success' ? 'All workflows passed' : t.conclusion === 'cancelled' ? 'Cancelled' : `${t.runs.filter((x) => ['failure', 'timed_out', 'startup_failure', 'action_required'].includes(x.conclusion)).length} workflow(s) failed`;
+          : t.conclusion === 'success' ? 'All workflows passed' : t.conclusion === 'cancelled' ? 'Cancelled' : `${plural(t.runs.filter((x) => ['failure', 'timed_out', 'startup_failure', 'action_required'].includes(x.conclusion)).length, 'workflow')} failed`;
     const cls = t.state === 'done' ? (t.conclusion === 'success' ? 'success' : t.conclusion === 'failure' ? 'failure' : '') : t.state;
     const failedRuns = t.runs.filter((x) => ['failure', 'timed_out', 'startup_failure'].includes(x.conclusion));
     return h('div', { class: `tracker ${cls}` },
@@ -99,7 +109,7 @@ export function render(main) {
   function boardRow(e) {
     const { r, b } = e;
     if (!b) return h('div', { class: 'board-card' }, h('span', { class: 'dot' }), h('strong', null, r.label), h('span', { class: 'faint' }, 'loading…'), h('span'), h('span'), h('span'));
-    if (b.error) return h('div', { class: 'board-card' }, h('span', { class: 'dot bad' }), h('strong', null, r.label), h('span', { class: 'muted ellipsis', title: b.error }, b.kind === 'no-access' ? `No access with the GitHub account used for ${r.slug.owner}. Change it in Settings → GitHub accounts.` : b.error.split('\n')[0]), h('span'), h('span'), h('span'));
+    if (b.error) return h('div', { class: 'board-card' }, h('span', { class: 'dot bad' }), h('strong', null, r.label), h('span', { class: 'muted ellipsis', title: b.error }, b.kind === 'no-access' ? `No access with the GitHub account used for ${r.slug.owner}. Change it in Settings → Accounts & folders.` : b.error.split('\n')[0]), h('span'), h('span'), h('span'));
     const running = b.runs.filter((x) => x.status !== 'completed');
     const longest = running.length ? running.reduce((a, x) => (Date.parse(x.createdAt) < Date.parse(a.createdAt) ? x : a)) : null;
     return h('div', { class: 'board-card', style: { cursor: 'pointer' }, onclick: () => navigate(`#/repo/${r.id}/actions`) },
@@ -115,7 +125,7 @@ export function render(main) {
 
   const unsubs = [subscribe('board', draw), subscribe('trackers', draw), subscribe('repos', draw), subscribe('config', draw)];
   const tick = setInterval(() => {
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+    if (document.activeElement && /^(INPUT|SELECT)$/.test(document.activeElement.tagName)) return; // typing, or a list is open
     if (store.trackers.some((t) => t.state === 'running' || t.state === 'waiting') || Object.values(store.board).some((b) => boardState(b) === 'running')) draw();
   }, 2000);
   // Tell the server the board is still on screen, so it keeps polling at the faster rate.

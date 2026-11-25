@@ -1,10 +1,11 @@
 // Pull requests: list, detail (conversation, files with inline review, commits, checks), create, merge.
-import { h, mount, icon, btn, iconBtn, act, menuAt, menuBelow, confirmDanger, form, modal, banner, ago, fmtDate, markdown, statusBadge, showError, debounce, copyText } from '../dom.js';
+import { h, mount, icon, btn, iconBtn, act, menuAt, menuBelow, confirmDanger, form, modal, banner, plural, ago, fmtDate, markdown, statusBadge, showError, debounce, copyText, checksBadge } from '../dom.js';
 import { rpc } from '../api.js';
 import { prefs, store } from '../store.js';
 import { navigate } from '../router.js';
 import { createDiffView } from '../diffview.js';
 import { switchTo } from '../repoview.js';
+import { askCopilot, copilotOn } from '../copilot.js';
 
 export function render(view, r, sub) {
   if (!r.slug || !r.slug.github) return unavailable(view, r);
@@ -24,7 +25,7 @@ function ghErrorView(e, r) {
   return h('div', { class: 'empty' },
     h('h3', null, noAccess ? 'GitHub says this repository does not exist or is not visible to your account' : 'Could not load from GitHub'),
     h('div', { class: 'errbox', style: { textAlign: 'left', margin: '10px auto', maxWidth: '720px' } }, e.message),
-    noAccess ? h('div', null, 'If you have several GitHub accounts, pick the right one for ', h('strong', null, r.slug.owner), ' in ', h('a', { onclick: () => navigate('#/settings') }, 'Settings → GitHub accounts'), ', or sign in with "gh auth login".') : null);
+    noAccess ? h('div', null, 'If you have several GitHub accounts, pick the right one for ', h('strong', null, r.slug.owner), ' in ', h('a', { onclick: () => navigate('#/settings') }, 'Settings → Accounts & folders'), ', or sign in with "gh auth login".') : null);
 }
 
 // ---------------- list ----------------
@@ -37,20 +38,20 @@ function list(view, r) {
   const bar = h('div', { class: 'diff-toolbar' });
   const body = h('div', { class: 'pane-scroll' });
   mount(view, h('div', { class: 'pane', style: { flex: 1 } }, bar, body));
-  const searchIn = h('input', { type: 'search', placeholder: 'Search pull requests', style: { width: '200px' } });
-  const labelIn = h('input', { type: 'search', placeholder: 'Label', style: { width: '100px' } });
-  const authorIn = h('input', { type: 'search', placeholder: 'Author', style: { width: '100px' } });
-  const baseIn = h('input', { type: 'search', placeholder: 'Base branch', style: { width: '110px' } });
+  const searchIn = h('input', { type: 'search', placeholder: 'Search pull requests', style: { flex: '4 1 130px', minWidth: '130px', maxWidth: '220px' } }); // the boxes give way so the buttons stay on the row
+  const labelIn = h('input', { type: 'search', placeholder: 'Label', style: { flex: '1 1 70px', minWidth: '70px', maxWidth: '100px' } });
+  const authorIn = h('input', { type: 'search', placeholder: 'Author', style: { flex: '1 1 70px', minWidth: '70px', maxWidth: '100px' } });
+  const baseIn = h('input', { type: 'search', placeholder: 'Base branch', style: { flex: '1 1 100px', minWidth: '100px', maxWidth: '110px' } });
   const reload = debounce(() => { search = searchIn.value.trim(); label = labelIn.value.trim(); author = authorIn.value.trim(); base = baseIn.value.trim(); load(); }, 400);
   [searchIn, labelIn, authorIn, baseIn].forEach((i) => i.addEventListener('input', reload));
   function renderBar() {
     mount(bar, h('div', { class: 'pill-tabs' }, FILTERS.map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => { filter = k; prefs.set('prFilter', k); renderBar(); load(); } }, l))),
       searchIn, labelIn, authorIn, baseIn, h('span', { class: 'spacer' }),
-      iconBtn('refresh', 'Refresh', () => load()),
+      iconBtn('refresh', 'Refresh', () => load(), 'small'),
       btn('New pull request', () => navigate(`#/repo/${r.id}/prs/new`), { cls: 'primary small', iconName: 'plus' }));
   }
   async function load() {
-    mount(body, h('div', { class: 'progress' }));
+    mount(body, h('div', { class: 'progress' }), h('div', { class: 'skeleton' }, 'Loading…'));
     try {
       const prs = await rpc('pr.list', { id: r.id, filter, search, label, author, base });
       const cur = r.summary && r.summary.branch;
@@ -62,7 +63,7 @@ function list(view, r) {
             (p.labels || []).slice(0, 4).map((l) => h('span', { class: 'badge', style: { borderColor: `#${l.color}` } }, l.name))),
           h('div', { class: 'sub' }, `#${p.number} · ${p.author ? p.author.login : ''} · ${p.baseRefName} ← ${p.headRefName} · updated ${ago(p.updatedAt)}`)),
         p.reviewDecision ? h('span', { class: `badge ${p.reviewDecision === 'APPROVED' ? 'ok' : p.reviewDecision === 'CHANGES_REQUESTED' ? 'bad' : ''}` }, p.reviewDecision.replace(/_/g, ' ').toLowerCase()) : null,
-        p.checks ? h('span', { class: `badge ${p.checks === 'success' ? 'ok' : p.checks === 'failure' ? 'bad' : 'run'}` }, `checks ${p.checks}`) : null,
+        checksBadge(p.checks),
         p.state !== 'OPEN' ? h('span', { class: `badge ${p.state === 'MERGED' ? 'accent' : ''}` }, p.state.toLowerCase()) : null))
         : h('div', { class: 'empty' }, 'No pull requests match.'));
     } catch (e) { mount(body, ghErrorView(e, r)); }
@@ -79,11 +80,14 @@ function detail(view, r, number) {
   let meta = null;
   let tab = prefs.get('prTab', 'conversation');
   let disposed = false;
-  const top = h('div', { class: 'repo-head', style: { background: 'var(--panel)' } });
+  const top = h('div', { class: 'repo-head' });
   const tabs = h('div', { class: 'tabs' });
   const body = h('div', { class: 'view' });
   const veil = h('div', { class: 'busy-veil hidden', role: 'status', 'aria-live': 'polite' });
   mount(view, h('div', { class: 'pane busy-host', style: { flex: 1 } }, top, tabs, body, veil));
+  // Until GitHub answers: a way back and a sign of life, not three empty strips. A failed load keeps the way back.
+  mount(top, iconBtn('back', 'Back to the list', () => navigate(`#/repo/${r.id}/prs`)), h('span', { class: 'title' }, `Pull request #${number}`));
+  mount(body, h('div', { class: 'skeleton' }, 'Loading…'));
 
   // While something is being changed on GitHub or in the folder: say what, and block every action on the page.
   let busy = false;
@@ -107,8 +111,8 @@ function detail(view, r, number) {
       pr = p; threads = t; draft = d;
       if (!meta) meta = await rpc('gh.meta', { id: r.id }).catch(() => null);
       renderTop(); renderTabs();
-      if (full) renderBody();
-    } catch (e) { mount(body, ghErrorView(e, r)); }
+      if (full) renderBody(true);
+    } catch (e) { if (!disposed) mount(body, ghErrorView(e, r)); }
   }
 
   function renderTop() {
@@ -119,12 +123,12 @@ function detail(view, r, number) {
         h('div', { class: 'row' }, h('span', { class: 'title ellipsis' }, pr.title), h('span', { class: 'muted' }, `#${pr.number}`)),
         h('div', { class: 'row', style: { fontSize: '12px' } },
           h('span', { class: `badge ${stateCls}` }, pr.isDraft && pr.state === 'OPEN' ? 'draft' : pr.state.toLowerCase()),
-          h('span', { class: 'muted' }, `${pr.author ? pr.author.login : ''} wants to merge ${pr.commits.length} commit(s) into `), h('code', null, pr.baseRefName), h('span', { class: 'muted' }, 'from'), h('code', null, pr.isCrossRepository ? `${pr.headRepositoryOwner.login}:${pr.headRefName}` : pr.headRefName),
+          h('span', { class: 'muted' }, `${pr.author ? pr.author.login : ''} wants to merge ${plural(pr.commits.length, 'commit')} into `), h('code', null, pr.baseRefName), h('span', { class: 'muted' }, 'from'), h('code', null, pr.isCrossRepository ? `${pr.headRepositoryOwner.login}:${pr.headRefName}` : pr.headRefName),
           h('span', { class: 'faint' }, `+${pr.additions} −${pr.deletions}`))),
       pr.state === 'OPEN' ? btn(pr.localBranch && r.summary && r.summary.branch === pr.localBranch ? 'Checked out' : 'Check out', () => checkout(), { cls: 'small', iconName: 'branch', disabled: pr.localBranch && r.summary && r.summary.branch === pr.localBranch }) : null,
       btn('Edit', () => editPr(), { cls: 'small', iconName: 'edit' }),
       btn('', (e) => menuBelow(e.currentTarget, moreMenu()), { cls: 'small icon', iconName: 'more', title: 'More' }),
-      btn('GitHub', () => rpc('open.url', { url: pr.url }), { cls: 'small', iconName: 'external' }));
+      btn('Open on GitHub', () => rpc('open.url', { url: pr.url }), { cls: 'small', iconName: 'external' }));
   }
   function moreMenu() {
     return [
@@ -141,20 +145,23 @@ function detail(view, r, number) {
       .map(([k, l, n]) => h('button', { class: `tab ${tab === k ? 'active' : ''}`, onclick: () => { tab = k; prefs.set('prTab', k); renderTabs(); renderBody(); } }, l, h('span', { class: 'badge' }, n),
         k === 'checks' && failing ? h('span', { class: 'dot bad' }) : null, k === 'files' && draft.comments.length ? h('span', { class: 'badge accent' }, `${draft.comments.length} pending`) : null)));
   }
-  function renderBody() {
-    if (tab === 'files') return files();
-    if (tab === 'commits') return commits();
-    if (tab === 'checks') return checks();
-    return conversation();
+  /** keep: the page was reloaded after an action, so stay where the reader was instead of jumping to the top. */
+  function renderBody(keep) {
+    const was = keep ? body.querySelector('.page') : null;
+    const y = was ? was.scrollTop : 0;
+    if (tab === 'files') files();
+    else if (tab === 'commits') commits();
+    else if (tab === 'checks') checks();
+    else conversation();
+    const now = y ? body.querySelector('.page') : null;
+    if (now) now.scrollTop = y;
   }
 
   // ----- conversation -----
   function conversation() {
-    const page = h('div', { class: 'page' });
     const main = h('div', { class: 'grow', style: { minWidth: 0 } });
     const side = h('div', { style: { width: '280px', flex: 'none' }, class: 'col' });
-    mount(body, h('div', { class: 'page', style: { padding: 0 } }, h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '18px', padding: '14px 18px' } }, main, side)));
-    void page;
+    mount(body, h('div', { class: 'page' }, h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '18px' } }, main, side)));
     const events = [
       ...(pr.comments || []).map((c) => ({ t: Date.parse(c.createdAt), node: commentNode(c, 'issue') })),
       ...(pr.reviews || []).filter((rv) => rv.body || rv.state !== 'COMMENTED').map((rv) => ({ t: Date.parse(rv.submittedAt || rv.createdAt || 0), node: reviewNode(rv) })),
@@ -206,7 +213,7 @@ function detail(view, r, number) {
       h('div', { class: 'chead', style: { display: 'flex', gap: '8px', padding: '6px 10px', background: 'var(--panel-2)', fontSize: '12px', alignItems: 'center' } },
         withPath ? h('a', { class: 'mono', onclick: () => { tab = 'files'; renderTabs(); renderBody(); } }, `${th.path}${th.line ? `:${th.line}` : ''}`) : null,
         th.isOutdated ? h('span', { class: 'badge warn' }, 'outdated') : null, th.isResolved ? h('span', { class: 'badge ok' }, 'resolved') : null, h('span', { class: 'spacer' }),
-        h('a', { onclick: () => act(() => rpc('pr.resolveThread', { id: r.id, threadId: th.id, resolved: !th.isResolved }), { ok: th.isResolved ? 'Unresolved' : 'Resolved' }).then(() => load()) }, th.isResolved ? 'Unresolve' : 'Resolve')),
+        h('a', { onclick: () => run(th.isResolved ? 'Reopening the thread…' : 'Resolving the thread…', () => rpc('pr.resolveThread', { id: r.id, threadId: th.id, resolved: !th.isResolved }), th.isResolved ? 'Unresolved' : 'Resolved') }, th.isResolved ? 'Unresolve' : 'Resolve')),
       th.comments.nodes.map((c) => h('div', { style: { padding: '6px 10px', borderTop: '1px solid var(--border)' } },
         h('div', { class: 'row', style: { fontSize: '12px' } }, h('strong', null, c.author ? c.author.login : ''), h('span', { class: 'muted' }, ago(c.createdAt)), h('span', { class: 'spacer' }),
           c.viewerCanUpdate ? h('a', { onclick: () => editComment(c.databaseId, c.body, 'review') }, 'edit') : null,
@@ -235,10 +242,10 @@ function detail(view, r, number) {
     const status = [];
     if (pr.isDraft) status.push(h('div', { class: 'warn-box' }, 'This is a draft. Mark it ready for review before merging.'));
     if (conflicts) status.push(h('div', { class: 'danger-box' }, `This branch has conflicts with ${pr.baseRefName}. Check it out, merge ${pr.baseRefName} into it and resolve them, or use "Update branch" if GitHub can do it.`));
-    if (behind) status.push(h('div', { class: 'warn-box' }, `The branch is behind ${pr.baseRefName} and the repository requires it to be up to date. `, h('a', { onclick: () => act(() => rpc('pr.updateBranch', { id: r.id, number }), { ok: 'Update requested' }).then(() => load()) }, 'Update branch')));
+    if (behind) status.push(h('div', { class: 'warn-box' }, `The branch is behind ${pr.baseRefName} and the repository requires it to be up to date. `, h('a', { onclick: () => run('Updating the branch…', () => rpc('pr.updateBranch', { id: r.id, number }), 'Update requested') }, 'Update branch')));
     if (blocked) status.push(h('div', { class: 'warn-box' }, 'Merging is blocked by branch protection (required reviews or checks). You can enable auto-merge so it merges once the requirements are met.'));
     if (cs) status.push(h('div', { class: cs === 'success' ? 'info-box' : cs === 'failure' ? 'danger-box' : 'warn-box' }, cs === 'success' ? 'All checks passed.' : cs === 'failure' ? 'Some checks failed. ' : 'Checks are still running. ', cs !== 'success' ? h('a', { onclick: () => { tab = 'checks'; renderTabs(); renderBody(); } }, 'View checks') : null));
-    if (pr.autoMergeRequest) status.push(h('div', { class: 'info-box' }, `Auto-merge (${(pr.autoMergeRequest.mergeMethod || '').toLowerCase()}) is enabled. `, h('a', { onclick: () => act(() => rpc('pr.disableAuto', { id: r.id, number }), { ok: 'Auto-merge disabled' }).then(() => load()) }, 'Disable')));
+    if (pr.autoMergeRequest) status.push(h('div', { class: 'info-box' }, `Auto-merge (${(pr.autoMergeRequest.mergeMethod || '').toLowerCase()}) is enabled. `, h('a', { onclick: () => run('Disabling auto-merge…', () => rpc('pr.disableAuto', { id: r.id, number }), 'Auto-merge disabled') }, 'Disable')));
     const subj = h('input', { type: 'text', style: { width: '100%' }, value: method === 'squash' ? `${pr.title} (#${pr.number})` : `Merge pull request #${pr.number} from ${pr.headRepositoryOwner ? pr.headRepositoryOwner.login : ''}/${pr.headRefName}` });
     const msgBody = h('textarea', { rows: 3, style: { width: '100%' } }, method === 'squash' ? pr.commits.map((c) => `* ${c.messageHeadline}`).join('\n') : pr.title);
     const delBranch = h('input', { type: 'checkbox', checked: meta ? !!meta.delete_branch_on_merge || prefs.get('deleteAfterMerge', true) : prefs.get('deleteAfterMerge', true), disabled: pr.isCrossRepository });
@@ -263,12 +270,12 @@ function detail(view, r, number) {
       if (tidyUp && !plan) return;
       const ok = await confirmDanger({
         title: auto ? 'Enable auto-merge?' : `Merge #${number}?`,
-        message: `${auto ? 'When all requirements are met, GitHub will merge' : 'Merge'} ${pr.commits.length} commit(s) from ${pr.headRefName} into ${pr.baseRefName} using "${allowed.find((a) => a[0] === method)[2]}". Only the commits you see here (head ${pr.headRefOid.slice(0, 8)}) will be merged.${delBranch.checked && !auto ? ` The branch ${pr.headRefName} will be deleted on GitHub.` : ''}${tidyUp ? (plan.stay ? ` Then ${pr.baseRefName} is updated and the local branch is deleted; you stay on ${r.summary.branch}.` : ` Then this folder switches to ${pr.baseRefName}, pulls, and the local branch is deleted.`) : ''}`,
+        message: `${auto ? 'When all requirements are met, GitHub will merge' : 'Merge'} ${plural(pr.commits.length, 'commit')} from ${pr.headRefName} into ${pr.baseRefName} using "${allowed.find((a) => a[0] === method)[2]}". Only the commits you see here (head ${pr.headRefOid.slice(0, 8)}) will be merged.${delBranch.checked && !auto ? ` The branch ${pr.headRefName} will be deleted on GitHub.` : ''}${tidyUp ? (plan.stay ? ` Then ${pr.baseRefName} is updated and the local branch is deleted; you stay on ${r.summary.branch}.` : ` Then this folder switches to ${pr.baseRefName}, pulls, and the local branch is deleted.`) : ''}`,
         confirmLabel: auto ? 'Enable auto-merge' : 'Merge', danger: false,
       });
       if (!ok) return;
       await busyWhile(auto ? 'Enabling auto-merge…' : `Merging #${number}…`, async () => { try {
-        const res = await rpc('pr.merge', { id: r.id, number, method, subject: subj.value, body: msgBody.value, auto, headOid: pr.headRefOid, deleteBranch: delBranch.checked, headRef: pr.headRefName, crossRepo: pr.isCrossRepository });
+        const res = await rpc('pr.merge', { id: r.id, number, method, subject: subj.value, body: msgBody.value, auto, headOid: pr.headRefOid, deleteBranch: delBranch.checked, headRef: pr.headRefName, crossRepo: pr.isCrossRepository, thenCleanup: tidyUp });
         banner({ level: 'success', title: auto ? 'Auto-merge enabled' : `Merged #${number}`, body: auto ? (tidy.checked ? 'The clean-up cannot wait for the merge. Once it has merged, use "Clean up branch" on this page.' : null) : `Tracking the workflow runs on ${pr.baseRefName}. You will get a notification when they finish.${res.deleteError ? `\nBranch not deleted: ${res.deleteError}` : ''}`, timeout: 8000, actions: auto ? [] : [{ label: 'Open Actions board', action: () => navigate('#/board') }] });
         if (tidyUp) { setBusy(`Cleaning up after #${number}…`); await cleanup(plan); }
         setBusy('Refreshing…');
@@ -300,7 +307,7 @@ function detail(view, r, number) {
     });
     mount(body, h('div', { class: 'pane', style: { flex: 1 } }, reviewBar, h('div', { class: 'split' }, fileList, h('div', { class: 'right' }, diff.el))));
     function renderReviewBar() {
-      mount(reviewBar, h('span', null, draft.comments.length ? h('strong', null, `${draft.comments.length} pending comment(s)`) : 'Click + next to a line (or select lines) to comment. Comments are collected into one review.'),
+      mount(reviewBar, h('span', null, draft.comments.length ? h('strong', null, plural(draft.comments.length, 'pending comment')) : 'Click + next to a line (or select lines) to comment. Comments are collected into one review.'),
         h('span', { class: 'spacer' }), pr.state === 'OPEN' ? btn('Submit review…', () => submitReview(), { cls: 'primary small' }) : null);
     }
     renderReviewBar();
@@ -314,9 +321,9 @@ function detail(view, r, number) {
       const goChecks = h('a', { onclick: () => { tab = 'checks'; renderTabs(); renderBody(); } }, 'Why?');
       fileList.append(h('div', { style: { margin: '14px 14px 0', paddingTop: '14px', borderTop: '1px solid var(--border)' }, class: 'col' },
         h('span', { class: 'eyebrow' }, 'Merge readiness'),
-        changes ? item('bad', `${changes} change request(s)`) : approvals ? item('ok', `${approvals} approval(s)`) : item('', 'No review yet'),
+        changes ? item('bad', plural(changes, 'change request')) : approvals ? item('ok', plural(approvals, 'approval')) : item('', 'No review yet'),
         pr.checksState === 'failure' ? item('bad', 'Checks failing', goChecks) : pr.checksState === 'pending' ? item('run', 'Checks running') : pr.checksState === 'success' ? item('ok', 'Checks passing') : item('', 'No checks'),
-        pr.mergeable === 'CONFLICTING' ? item('bad', `Conflicts with ${pr.baseRefName}`) : pr.mergeStateStatus === 'BEHIND' ? item('warn', `Behind ${pr.baseRefName}`, h('a', { onclick: () => act(() => rpc('pr.updateBranch', { id: r.id, number }), { ok: 'Update requested' }).then(() => load()) }, 'Update')) : item('ok', `Up to date with ${pr.baseRefName}`)));
+        pr.mergeable === 'CONFLICTING' ? item('bad', `Conflicts with ${pr.baseRefName}`) : pr.mergeStateStatus === 'BEHIND' ? item('warn', `Behind ${pr.baseRefName}`, h('a', { onclick: () => run('Updating the branch…', () => rpc('pr.updateBranch', { id: r.id, number }), 'Update requested') }, 'Update')) : item('ok', `Up to date with ${pr.baseRefName}`)));
     }
     async function loadDiff(full) {
       try { diff.set(await rpc('pr.diff', { id: r.id, number, full })); } catch (e) { banner({ level: 'error', title: 'Could not load the diff', body: e.message }); }
@@ -351,7 +358,7 @@ function detail(view, r, number) {
   async function submitReview() {
     const v = await form({
       title: 'Submit review',
-      intro: h('div', { class: 'muted' }, draft.comments.length ? `${draft.comments.length} inline comment(s) will be included.` : 'No inline comments.'),
+      intro: h('div', { class: 'muted' }, draft.comments.length ? `${plural(draft.comments.length, 'inline comment')} will be included.` : 'No inline comments.'),
       fields: [
         { name: 'event', label: 'Review', type: 'select', value: 'COMMENT', options: [{ value: 'COMMENT', label: 'Comment' }, { value: 'APPROVE', label: 'Approve' }, { value: 'REQUEST_CHANGES', label: 'Request changes' }] },
         { name: 'body', label: 'Summary (optional for Approve)', type: 'textarea', rows: 5 },
@@ -360,8 +367,7 @@ function detail(view, r, number) {
     });
     if (!v) return;
     if (v.event !== 'APPROVE' && !v.body.trim() && !draft.comments.length) { banner({ level: 'warn', title: 'Write a summary or add inline comments first', timeout: 3500 }); return; }
-    const ok = await act(() => rpc('pr.review', { id: r.id, number, event: v.event, body: v.body, commitId: pr.headRefOid }), { ok: 'Review submitted' });
-    if (ok !== undefined) load();
+    await run('Submitting the review…', () => rpc('pr.review', { id: r.id, number, event: v.event, body: v.body, commitId: pr.headRefOid }), 'Review submitted');
   }
 
   // ----- commits & checks -----
@@ -373,9 +379,9 @@ function detail(view, r, number) {
     const failed = pr.checks.filter((c) => ['failure', 'timed_out', 'cancelled', 'startup_failure'].includes(c.conclusion) && c.runId);
     const runIds = [...new Set(failed.map((c) => c.runId))];
     mount(body, h('div', { class: 'page' },
-      h('div', { class: 'row', style: { marginBottom: '10px' } }, h('strong', { class: 'grow' }, `${pr.checks.length} checks`),
+      h('div', { class: 'row', style: { marginBottom: '10px' } }, h('strong', { class: 'grow' }, plural(pr.checks.length, 'check')),
         runIds.length ? btn(`Re-run failed (${runIds.length} run${runIds.length > 1 ? 's' : ''})`, async () => { for (const id of runIds) await act(() => rpc('run.rerun', { id: r.id, runId: id, failed: true }), { ok: `Re-running ${id}` }); load(); }, { cls: 'small' }) : null,
-        iconBtn('refresh', 'Refresh', () => load())),
+        iconBtn('refresh', 'Refresh', () => load(), 'small')),
       pr.checks.length ? h('div', { class: 'panel' }, pr.checks.map((c) => h('div', { class: 'run-row', onclick: () => (c.runId ? navigate(`#/repo/${r.id}/actions/run/${c.runId}`) : c.url && rpc('open.url', { url: c.url })) },
         statusBadge(c.status === 'completed' || c.conclusion ? 'completed' : c.status, c.conclusion), h('div', { class: 'grow' }, h('div', null, c.name), h('div', { class: 'sub' }, c.workflow || '')),
         c.startedAt && c.completedAt ? h('span', { class: 'faint' }, `${Math.round((Date.parse(c.completedAt) - Date.parse(c.startedAt)) / 1000)}s`) : null,
@@ -398,7 +404,7 @@ function detail(view, r, number) {
       stay = c === 'stay'; asked = true;
     }
     if (!stay && s.branch !== base && s.dirty) {
-      const c = await modal({ title: 'Uncommitted changes', body: h('div', null, `You have ${s.dirty} uncommitted change(s). Cleaning up switches to ${base}. Stash them first, or bring them along to ${base}?`),
+      const c = await modal({ title: 'Uncommitted changes', body: h('div', null, `You have ${plural(s.dirty, 'uncommitted change')}. Cleaning up switches to ${base}. Stash them first, or bring them along to ${base}?`),
         actions: [{ label: 'Cancel', value: null }, { label: `Bring to ${base}`, value: 'carry' }, { label: 'Stash and clean up', cls: 'primary', default: true, value: 'stash' }] });
       if (!c) return null;
       mode = c; asked = true;
@@ -453,7 +459,7 @@ function detail(view, r, number) {
     let mode = 'carry';
     if (s.dirty) {
       const { modal: m } = await import('../dom.js');
-      const choice = await m({ title: 'Uncommitted changes', body: h('div', null, `You have ${s.dirty} uncommitted change(s). Stash them before checking out the pull request?`), actions: [{ label: 'Cancel', value: null }, { label: 'Bring changes', value: 'carry' }, { label: 'Stash and check out', cls: 'primary', default: true, value: 'stash' }] });
+      const choice = await m({ title: 'Uncommitted changes', body: h('div', null, `You have ${plural(s.dirty, 'uncommitted change')}. Stash them before checking out the pull request?`), actions: [{ label: 'Cancel', value: null }, { label: 'Bring changes', value: 'carry' }, { label: 'Stash and check out', cls: 'primary', default: true, value: 'stash' }] });
       if (!choice) return;
       mode = choice;
     }
@@ -506,7 +512,7 @@ function detail(view, r, number) {
 
 // ---------------- create ----------------
 function createPr(view, r) {
-  const page = h('div', { class: 'page', style: { maxWidth: '900px' } });
+  const page = h('div', { class: 'page' });
   mount(view, page);
   mount(page, h('div', { class: 'skeleton' }, 'Preparing…'));
   (async () => {
@@ -518,43 +524,129 @@ function createPr(view, r) {
     if (pre.head === pre.base) { mount(page, h('div', { class: 'empty' }, h('h3', null, `You are on ${pre.base}, the base branch`), h('div', null, 'Create a branch for your change first (branch button at the top).'))); return; }
     const remote = r.slug.remote || 'origin';
     const bases = [...new Set([pre.base, ...refs.remote.filter((b) => b.name.startsWith(`${remote}/`)).map((b) => b.name.slice(remote.length + 1))])].filter((b) => b && b !== 'HEAD' && b !== pre.head);
-    const base = h('select', null, bases.map((b) => h('option', { value: b, selected: b === pre.base }, b)));
+    const base = h('select', { title: 'The branch this pull request merges into', onchange: () => changeBase() }, bases.map((b) => h('option', { value: b, selected: b === pre.base }, b)));
+    const count = h('span', { class: 'muted' });
+    const baseNote = h('div', { class: 'row wrap muted pr-base-note' });
     const title = h('input', { type: 'text', value: pre.title, style: { width: '100%' } });
-    const bodyIn = h('textarea', { rows: 14, style: { width: '100%' } }, pre.body || '');
+    const bodyIn = h('textarea', { rows: 16, style: { width: '100%' } }, pre.body || '');
+    // What the page last filled in by itself. A field the user has edited is left alone when the base changes.
+    let filled = { title: pre.title, body: pre.body || '' };
     const preview = h('div', { class: 'panel panel-body hidden', style: { minHeight: '200px' } });
+    const commitsBox = h('div', { class: 'pr-new-side' });
     const draft = h('input', { type: 'checkbox' });
     const pushFirst = h('input', { type: 'checkbox', checked: pre.needsPush });
     const reviewerBoxes = people.map((p) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: p }), p));
     const assignMe = h('input', { type: 'checkbox' });
     const labelBoxes = labels.map((l) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: l.name }), h('span', { class: 'badge', style: { borderColor: `#${l.color}` } }, l.name)));
     const tabsEl = h('div', { class: 'pill-tabs' });
-    const setTab = (t) => { mount(tabsEl, h('button', { class: t === 'write' ? 'active' : '', onclick: () => setTab('write') }, 'Write'), h('button', { class: t === 'preview' ? 'active' : '', onclick: () => setTab('preview') }, 'Preview')); bodyIn.classList.toggle('hidden', t !== 'write'); preview.classList.toggle('hidden', t === 'write'); if (t === 'preview') mount(preview, markdown(bodyIn.value)); };
+    let tab = 'write';
+    const setTab = (t) => { tab = t; mount(tabsEl, h('button', { class: t === 'write' ? 'active' : '', onclick: () => setTab('write') }, 'Write'), h('button', { class: t === 'preview' ? 'active' : '', onclick: () => setTab('preview') }, 'Preview')); bodyIn.classList.toggle('hidden', t !== 'write'); preview.classList.toggle('hidden', t === 'write'); if (t === 'preview') mount(preview, markdown(bodyIn.value)); };
     setTab('write');
+
+    function drawCommits() {
+      const n = pre.commits.length;
+      count.textContent = `${n} commit${n === 1 ? '' : 's'}`;
+      mount(commitsBox, h('h3', null, 'Commits'),
+        n ? h('div', { class: 'panel' }, pre.commits.map((c) => h('div', { class: 'list-row', onclick: () => navigate(`#/repo/${r.id}/graph/${c.hash}`) }, h('span', { class: 'mono muted' }, c.hash.slice(0, 8)), h('span', { class: 'grow ellipsis', title: c.subject }, c.subject), h('span', { class: 'faint' }, ago(c.commitTime)))))
+          : h('div', { class: 'warn-box' }, `${pre.head} has no commits that ${base.value} lacks, as of the last fetch. GitHub will refuse an empty pull request.`));
+    }
+
+    // Says why this base was picked, and lets the choice be kept for the repository.
+    function drawBaseNote() {
+      const sel = base.value;
+      const parts = [];
+      const setBase = async (branch, ok) => {
+        try { store.config = await rpc('pr.setBase', { id: r.id, branch }); pre.repoBase = branch; banner({ level: 'success', title: ok, timeout: 2500 }); } catch (e) { showError(e, 'Could not save the base branch'); }
+        drawBaseNote();
+      };
+      if (sel === pre.repoBase) {
+        parts.push(h('span', null, `Pull requests in this repository open into ${sel}.`), btn('Stop', () => setBase('', 'This repository follows the general setting again'), { cls: 'small ghost', title: 'Forget this repository’s base branch' }));
+      } else {
+        if ((pre.baseMissing || []).length) parts.push(h('span', null, `Your base branch ${pre.baseMissing.join(' and ')} does not exist in this repository.`));
+        else if (pre.allBase && sel === pre.allBase) parts.push(h('span', null, `${sel} is your base branch for every repository.`));
+        else if (pre.repoBase) parts.push(h('span', null, `This repository is set to open into ${pre.repoBase}.`));
+        const alreadyHow = sel === pre.defaultBranch && !pre.allBase && !pre.repoBase; // the default branch, with nothing set: nothing to remember
+        if (!alreadyHow) parts.push(btn(`Always use ${sel} for this repository`, () => setBase(sel, `Pull requests in this repository now open into ${sel}`), { cls: 'small' }));
+      }
+      mount(baseNote, parts);
+      baseNote.classList.toggle('hidden', !parts.length);
+    }
+
+    // Another base means other commits, maybe another template: ask again and refresh what was not edited by hand.
+    let asked = 0;
+    async function changeBase() {
+      const mine = ++asked;
+      const want = base.value;
+      count.textContent = 'Comparing…';
+      commitsBox.classList.add('busy');
+      drawBaseNote();
+      try {
+        const next = await rpc('pr.prefill', { id: r.id, base: want });
+        if (mine !== asked) return;
+        if (title.value === filled.title) title.value = next.title;
+        if (bodyIn.value === filled.body) { bodyIn.value = next.body || ''; if (tab === 'preview') mount(preview, markdown(bodyIn.value)); }
+        filled = { title: next.title, body: next.body || '' };
+        pre = { ...pre, ...next, baseMissing: pre.baseMissing };
+      } catch (e) {
+        if (mine !== asked) return;
+        showError(e, `Could not compare with ${want}`);
+      }
+      commitsBox.classList.remove('busy');
+      drawCommits();
+    }
+
+    // Copilot writes both fields. What was there can be brought back; text typed while it worked is not overwritten.
+    async function writeWithCopilot() {
+      const before = { title: title.value, body: bodyIn.value };
+      const holder = bodyIn.placeholder;
+      const res = await askCopilot('ai.prText', { id: r.id, base: base.value }, 'this branch’s commit messages and its diff against the base branch', () => { bodyIn.placeholder = 'Copilot is reading the commits and the diff…'; });
+      bodyIn.placeholder = holder;
+      if (!res) return;
+      const put = (t) => { title.value = t.title; bodyIn.value = t.body; if (tab === 'preview') mount(preview, markdown(bodyIn.value)); };
+      const next = { title: res.title || before.title, body: res.body };
+      if (title.value !== before.title || bodyIn.value !== before.body) {
+        banner({ level: 'info', title: 'Copilot’s text is ready', body: 'You kept typing, so it was not put in the fields.', timeout: 15000, actions: [{ label: 'Use it', action: () => put(next) }] });
+        return;
+      }
+      put(next);
+      banner({ level: 'success', title: 'Title and description written by Copilot', timeout: 7000,
+        body: res.cut ? 'The diff was long: Copilot saw the start of it, every commit and the full list of files.' : null,
+        actions: [{ label: 'Undo', action: () => put(before) }] });
+    }
+
+    const pushRow = pre.needsPush ? h('label', { class: 'check warn-box', style: { marginBottom: '10px' } }, pushFirst, pre.upstream ? `Push ${plural(pre.ahead, 'local commit')} first` : `Publish ${pre.head} to ${remote} first (required)`) : h('span', { class: 'hidden' });
     mount(page,
       h('h2', { style: { marginBottom: '12px' } }, 'New pull request'),
-      h('div', { class: 'row', style: { marginBottom: '10px' } }, h('span', null, 'Merge'), h('code', null, pre.head), h('span', null, 'into'), base,
-        h('span', { class: 'muted' }, `${pre.commits.length} commit(s)`)),
-      pre.needsPush ? h('label', { class: 'check warn-box', style: { marginBottom: '10px' } }, pushFirst, pre.upstream ? `Push ${pre.ahead} local commit(s) first` : `Publish ${pre.head} to ${remote} first (required)`) : null,
-      h('label', { class: 'field' }, h('span', null, 'Title'), title),
-      h('div', { class: 'row', style: { margin: '10px 0 4px' } }, h('span', { class: 'muted grow' }, 'Description'), tabsEl),
-      bodyIn, preview,
-      h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '24px', marginTop: '12px' } },
-        h('div', { class: 'col grow' }, h('strong', null, 'Reviewers'), reviewerBoxes.length ? h('div', { class: 'col', style: { maxHeight: '160px', overflow: 'auto' } }, reviewerBoxes) : h('span', { class: 'faint' }, 'No collaborators found')),
-        h('div', { class: 'col grow' }, h('strong', null, 'Labels'), labelBoxes.length ? h('div', { class: 'col', style: { maxHeight: '160px', overflow: 'auto' } }, labelBoxes) : h('span', { class: 'faint' }, 'No labels')),
-        h('div', { class: 'col' }, h('strong', null, 'Options'), h('label', { class: 'check' }, draft, 'Create as draft'), h('label', { class: 'check' }, assignMe, 'Assign to me'))),
-      h('div', { class: 'row', style: { marginTop: '16px' } }, h('span', { class: 'spacer' }), btn('Cancel', () => navigate(`#/repo/${r.id}/prs`)),
-        btn('Create pull request', async (e) => {
-          if (!title.value.trim()) { title.focus(); return; }
-          if (!pre.upstream && !pushFirst.checked) { banner({ level: 'warn', title: 'The branch must be published before creating a pull request', timeout: 4000 }); return; }
-          e.currentTarget.disabled = true;
-          try {
-            const res = await rpc('pr.create', { id: r.id, base: base.value, head: pre.head, title: title.value.trim(), body: bodyIn.value, draft: draft.checked, pushFirst: pushFirst.checked,
-              reviewers: reviewerBoxes.filter((b) => b.firstChild.checked).map((b) => b.firstChild.value), assignees: assignMe.checked ? ['@me'] : [], labels: labelBoxes.filter((b) => b.firstChild.checked).map((b) => b.firstChild.value) });
-            banner({ level: 'success', title: `Created pull request #${res.number}`, timeout: 4000 });
-            navigate(res.number ? `#/repo/${r.id}/prs/${res.number}` : `#/repo/${r.id}/prs`);
-          } catch (err) { showError(err, 'Could not create the pull request'); e.target.disabled = false; }
-        }, { cls: 'primary', iconName: 'pr' })),
-      pre.commits.length ? h('div', { style: { marginTop: '18px' } }, h('h3', null, 'Commits'), h('div', { class: 'panel' }, pre.commits.map((c) => h('div', { class: 'list-row' }, h('span', { class: 'mono muted' }, c.hash.slice(0, 8)), h('span', { class: 'grow ellipsis' }, c.subject), h('span', { class: 'faint' }, ago(c.commitTime)))))) : null);
+      h('div', { class: 'row wrap', style: { marginBottom: '8px' } }, h('span', null, 'Merge'), h('code', null, pre.head), h('span', null, 'into'), base, count),
+      baseNote,
+      h('div', { class: 'pr-new' },
+        h('div', null,
+          pushRow,
+          h('label', { class: 'field' }, h('span', null, 'Title'), title),
+          h('div', { class: 'row', style: { margin: '10px 0 4px' } }, h('span', { class: 'muted grow' }, 'Description'),
+            copilotOn() ? btn('Write with Copilot', () => writeWithCopilot(), { cls: 'small', iconName: 'sparkle', title: 'Write the title and description with GitHub Copilot, from this branch’s commits and diff against the chosen base' }) : null,
+            tabsEl),
+          bodyIn, preview,
+          h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '24px', marginTop: '12px' } },
+            h('div', { class: 'col grow' }, h('strong', null, 'Reviewers'), reviewerBoxes.length ? h('div', { class: 'col', style: { maxHeight: '160px', overflow: 'auto' } }, reviewerBoxes) : h('span', { class: 'faint' }, 'No collaborators found')),
+            h('div', { class: 'col grow' }, h('strong', null, 'Labels'), labelBoxes.length ? h('div', { class: 'col', style: { maxHeight: '160px', overflow: 'auto' } }, labelBoxes) : h('span', { class: 'faint' }, 'No labels')),
+            h('div', { class: 'col' }, h('strong', null, 'Options'), h('label', { class: 'check' }, draft, 'Create as draft'), h('label', { class: 'check' }, assignMe, 'Assign to me'))),
+          h('div', { class: 'row', style: { marginTop: '16px' } }, h('span', { class: 'spacer' }), btn('Cancel', () => navigate(`#/repo/${r.id}/prs`)),
+            btn('Create pull request', async (e) => {
+              if (!title.value.trim()) { title.focus(); return; }
+              if (!pre.upstream && !pushFirst.checked) { banner({ level: 'warn', title: 'The branch must be published before creating a pull request', timeout: 4000 }); return; }
+              const button = e.currentTarget;
+              button.disabled = true;
+              try {
+                const res = await rpc('pr.create', { id: r.id, base: base.value, head: pre.head, title: title.value.trim(), body: bodyIn.value, draft: draft.checked, pushFirst: pushFirst.checked,
+                  reviewers: reviewerBoxes.filter((b) => b.firstChild.checked).map((b) => b.firstChild.value), assignees: assignMe.checked ? ['@me'] : [], labels: labelBoxes.filter((b) => b.firstChild.checked).map((b) => b.firstChild.value) });
+                banner({ level: 'success', title: `Created pull request #${res.number}`, timeout: 4000 });
+                navigate(res.number ? `#/repo/${r.id}/prs/${res.number}` : `#/repo/${r.id}/prs`);
+              } catch (err) { showError(err, 'Could not create the pull request'); button.disabled = false; }
+            }, { cls: 'primary', iconName: 'pr' }))),
+        commitsBox));
+    drawCommits();
+    drawBaseNote();
     title.focus();
   })();
   return null;

@@ -13,7 +13,7 @@ if (!process.env.REPODECK_DATA && !fs.existsSync(base)) {
     try {
       fs.mkdirSync(base, { recursive: true });
       for (const n of fs.readdirSync(legacy)) {
-        if (/^(instance|edge-profile|window-profile|logs|neutral)/.test(n) || n.endsWith('.log')) continue;
+        if (/^(instance|edge-profile|window-profile|logs|neutral|copilot)/.test(n) || n.endsWith('.log')) continue;
         fs.cpSync(path.join(legacy, n), path.join(base, n), { recursive: true });
       }
     } catch { /* start fresh if the old folder cannot be read */ }
@@ -30,9 +30,10 @@ const paths = {
   backups: path.join(base, 'backups'),
   drafts: path.join(base, 'drafts'),
   neutral: path.join(base, 'neutral'), // cwd for gh so it never infers a repo
+  copilot: path.join(base, 'copilot'), // the Copilot CLI's settings folder when Repodeck starts it
 };
 
-for (const p of [paths.data, paths.logs, paths.backups, paths.drafts, paths.neutral]) {
+for (const p of [paths.data, paths.logs, paths.backups, paths.drafts, paths.neutral, paths.copilot]) {
   fs.mkdirSync(p, { recursive: true });
 }
 

@@ -77,7 +77,7 @@ function overview(page) {
       h('div', { class: 'tiles' }, [
         [dirty.length, 'uncommitted', 'var(--warn)'], [unpushed.length, 'unpushed', 'var(--info)'], [behind.length, 'behind upstream', 'var(--warn)'],
         [off.length, 'off default branch', 'var(--text)'], [stashes.length, 'with stashes', 'var(--text)'], [clean.length, 'clean', 'var(--ok)'],
-      ].map(([n, label, color]) => h('div', { class: 'tile', style: { cursor: 'default' } }, h('div', { class: 'tile-n', style: { color: n ? color : 'var(--faint)' } }, n), h('div', { class: 'muted' }, label)))),
+      ].map(([n, label, color]) => h('div', { class: 'tile' }, h('div', { class: 'tile-n', style: { color: n ? color : 'var(--faint)' } }, n), h('div', { class: 'tile-l' }, label)))),
       h('div', { class: 'two' },
         card('Uncommitted changes', h('span', { class: `badge ${dirty.length ? 'warn' : ''}` }, dirty.length ? `${plural(dirty.length, 'repository')} · ${plural(totalFiles, 'file')}` : '0'),
           dirty.map((x) => line(x, [two([x.s.counts.staged ? `${x.s.counts.staged} staged` : null, x.s.counts.unstaged ? `${x.s.counts.unstaged} changed` : null, x.s.counts.untracked ? `${x.s.counts.untracked} new` : null, x.s.counts.conflicted ? `${x.s.counts.conflicted} conflicted` : null].filter(Boolean).join(' · '), x.s.branch || 'detached'),
@@ -114,8 +114,12 @@ function bulk(page) {
   const sel = new Set();
   let op = 'fetch';
   const args = { branch: '', fromDefault: true, checkout: true, force: false, pull: true, message: '' };
+  let ops = null; // the list of operations, asked for once: before, every tick of a checkbox waited for the server
   async function draw() {
-    const ops = await rpc('bulk.ops').catch(() => ({}));
+    if (!ops) {
+      mount(page, h('div', { class: 'skeleton' }, 'Loading…'));
+      try { ops = await rpc('bulk.ops'); } catch (e) { mount(page, h('div', { class: 'errbox' }, e.message)); return; }
+    }
     const repos = [...store.repos].sort((a, b) => a.label.localeCompare(b.label));
     const needsBranch = ['switch', 'createBranch', 'deleteBranch'].includes(op);
     const argEls = [];
@@ -125,12 +129,12 @@ function bulk(page) {
     if (op === 'returnDefault') argEls.push(h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: args.pull, onchange: (e) => { args.pull = e.target.checked; } }), 'Fast-forward pull after switching'));
     if (op === 'stash') argEls.push(h('label', { class: 'field' }, h('span', null, 'Stash message'), h('input', { type: 'text', value: args.message, oninput: (e) => { args.message = e.target.value; } })));
     mount(page,
+      h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Bulk operations'), h('div', { class: 'muted' }, 'Run one operation in many repositories. You see what runs where, and what is skipped and why, before anything happens.'))),
       h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '20px' } },
         h('div', { class: 'panel', style: { width: '340px', flex: 'none' } }, h('div', { class: 'panel-head' }, h('h3', null, 'Operation')),
           h('div', { class: 'panel-body col' },
             h('select', { onchange: (e) => { op = e.target.value; draw(); } }, Object.entries(ops).map(([k, l]) => h('option', { value: k, selected: k === op }, l))),
             argEls,
-            h('div', { class: 'faint', style: { fontSize: '12px' } }, 'You will see exactly what runs where, and what is skipped and why, before anything happens.'),
             btn(`Preview on ${sel.size} selected`, () => { if (needsBranch && !args.branch) { banner({ level: 'warn', title: 'Enter a branch name', timeout: 3000 }); return; } runBulk(op, [...sel], args, ops[op]).then(() => draw()); }, { cls: 'primary', disabled: !sel.size }))),
         h('div', { class: 'grow' },
           h('div', { class: 'row', style: { marginBottom: '8px' } }, h('strong', null, `Repositories (${sel.size} of ${repos.length} selected)`), h('span', { class: 'spacer' }), h('span', { class: 'muted' }, 'Select'),
@@ -141,8 +145,11 @@ function bulk(page) {
               h('td', { style: { width: '32px' } }, h('input', { type: 'checkbox', checked: sel.has(r.id) })), h('td', { class: 'ellipsis' }, r.label), h('td', { class: 'muted ellipsis' }, s.branch || ''),
               h('td', null, s.dirty ? h('span', { class: 'badge dirty' }, `${s.dirty} changed`) : null, ' ', s.ahead ? h('span', { class: 'badge accent' }, `↑${s.ahead}`) : null, ' ', s.behind ? h('span', { class: 'badge warn' }, `↓${s.behind}`) : null)); })))));
   }
+  // The table follows the repositories: after an operation the new branch and state arrive a moment after
+  // the result, and showed only on the next click. Not while a field on this page is being typed in.
+  const un = subscribe('summary', debounce(() => { const a = document.activeElement; if (a && /^(INPUT|SELECT)$/.test(a.tagName) && a.type !== 'checkbox' && page.contains(a)) return; draw(); }, 300));
   draw();
-  return null;
+  return () => un();
 }
 
 // ---------- cleanup ----------
@@ -155,19 +162,19 @@ function cleanup(page) {
     function draw() {
       mount(page,
         h('div', { class: 'page-head' }, h('div', null, h('h1', null, 'Branch cleanup'), h('div', { class: 'muted' }, 'Local branches already merged into the default branch, or whose remote branch was deleted. Fetch and prune first for accurate results.')),
-          h('span', { class: 'spacer' }), btn('Fetch and prune all', () => act(() => rpc('bulk.run', { op: 'fetch', ids: fetchTargets().map((r) => r.id) })).then(load), { cls: 'small' })),
+          h('span', { class: 'spacer' }), btn('Fetch and prune all', () => runBulk('fetch', fetchTargets().map((r) => r.id), { prune: true }, 'Fetch and prune').then((res) => { if (res) load(); }), { cls: 'small', iconName: 'fetch' })),
         list.length ? h('table', { class: 'grid panel' }, h('tr', null, h('th', null, ''), h('th', null, 'Repository'), h('th', null, 'Branch'), h('th', null, 'Why'), h('th', null, 'Last commit')),
           list.map((x) => { const k = `${x.id}|${x.branch}`; return h('tr', { class: 'clickable', onclick: () => { if (sel.has(k)) sel.delete(k); else sel.add(k); draw(); } },
             h('td', null, h('input', { type: 'checkbox', checked: sel.has(k) })), h('td', null, x.label), h('td', { class: 'mono' }, x.branch),
             h('td', null, x.merged ? h('span', { class: 'badge ok' }, 'merged') : null, ' ', x.gone ? h('span', { class: x.merged ? 'badge' : 'badge warn', title: x.merged ? '' : 'The remote branch is gone but these commits are not in the default branch (for example after a squash merge). Deleting removes them from all branches.' }, x.merged ? 'remote gone' : 'remote gone, NOT merged') : null),
             h('td', { class: 'muted wrapcell' }, `${x.subject} · ${ago(x.time)}`)); }))
           : h('div', { class: 'empty' }, 'Nothing to clean up.'),
-        list.length ? h('div', { class: 'row', style: { marginTop: '12px' } }, h('span', { class: 'spacer' }), btn(`Delete ${sel.size} branch(es)…`, async () => {
+        list.length ? h('div', { class: 'row', style: { marginTop: '12px' } }, h('span', { class: 'spacer' }), btn(`Delete ${plural(sel.size, 'branch')}…`, async () => {
           const items = list.filter((x) => sel.has(`${x.id}|${x.branch}`));
           const unmerged = items.filter((x) => !x.merged);
-          if (!(await confirmDanger({ title: `Delete ${plural(items.length, 'local branch', )}?`, message: unmerged.length ? `${unmerged.length} of them are NOT merged; their commits will no longer be on any branch.` : 'All of them are merged; no commits are lost.', items: items.map((x) => `${x.label}: ${x.branch}${x.merged ? '' : '  (not merged)'}`), recover: 'Deleted branches stay recoverable through git reflog for about 90 days.', confirmLabel: 'Delete' }))) return;
+          if (!(await confirmDanger({ title: `Delete ${plural(items.length, 'local branch')}?`, message: unmerged.length ? `${unmerged.length} of them are NOT merged; their commits will no longer be on any branch.` : 'All of them are merged; no commits are lost.', items: items.map((x) => `${x.label}: ${x.branch}${x.merged ? '' : '  (not merged)'}`), recover: 'Deleted branches stay recoverable through git reflog for about 90 days.', confirmLabel: 'Delete' }))) return;
           const res = await act(() => rpc('cleanup.delete', { items: items.map((x) => ({ id: x.id, branch: x.branch, force: !x.merged })) }));
-          if (res) { const f = res.filter((x) => x.status === 'failed'); banner({ level: f.length ? 'error' : 'success', title: `Deleted ${res.length - f.length} branch(es)${f.length ? `, ${f.length} failed` : ''}`, body: f.map((x) => `${x.label} ${x.branch}: ${x.message}`).join('\n'), timeout: f.length ? 0 : 4000 }); load(); }
+          if (res) { const f = res.filter((x) => x.status === 'failed'); banner({ level: f.length ? 'error' : 'success', title: `Deleted ${plural(res.length - f.length, 'branch')}${f.length ? `, ${f.length} failed` : ''}`, body: f.map((x) => `${x.label} ${x.branch}: ${x.message}`).join('\n'), timeout: f.length ? 0 : 4000 }); load(); }
         }, { cls: 'danger', disabled: !sel.size })) : null);
     }
     draw();
@@ -184,7 +191,7 @@ function search(page) {
   const results = h('div');
   async function go() {
     if (!q.value.trim() && !author.value.trim()) { mount(results); return; }
-    mount(results, h('div', { class: 'progress' }));
+    mount(results, h('div', { class: 'progress' }), h('div', { class: 'skeleton' }, 'Searching…'));
     try {
       const list = await rpc('search.commits', { grep: q.value.trim(), author: author.value.trim(), since: since.value || undefined });
       mount(results, list.length ? h('div', { class: 'panel' }, list.map((c) => h('div', { class: 'list-row', onclick: () => navigate(`#/repo/${c.repoId}/graph/${c.hash}`) },

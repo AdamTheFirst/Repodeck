@@ -1,5 +1,5 @@
 // Issues: list, view, comment, create, close/reopen, labels/assignees, branch from issue.
-import { h, mount, icon, btn, iconBtn, act, form, modal, confirmDanger, banner, ago, markdown, debounce } from '../dom.js';
+import { h, mount, icon, btn, iconBtn, act, form, modal, confirmDanger, banner, ago, markdown, debounce, plural } from '../dom.js';
 import { rpc } from '../api.js';
 import { prefs } from '../store.js';
 import { navigate } from '../router.js';
@@ -22,18 +22,19 @@ function list(view, r) {
   function renderBar() {
     mount(bar,
       h('div', { class: 'pill-tabs' }, [['all', 'All'], ['assigned', 'Assigned to me'], ['mine', 'Created by me']].map(([k, l]) => h('button', { class: filter === k ? 'active' : '', onclick: () => { filter = k; prefs.set('issueFilter', k); renderBar(); load(); } }, l))),
-      h('div', { class: 'pill-tabs' }, ['open', 'closed'].map((k) => h('button', { class: state === k ? 'active' : '', onclick: () => { state = k; renderBar(); load(); } }, k))),
-      searchIn, h('span', { class: 'spacer' }), iconBtn('refresh', 'Refresh', () => load()),
+      h('div', { class: 'pill-tabs' }, [['open', 'Open'], ['closed', 'Closed']].map(([k, l]) => h('button', { class: state === k ? 'active' : '', onclick: () => { state = k; renderBar(); load(); } }, l))),
+      searchIn, h('span', { class: 'spacer' }), iconBtn('refresh', 'Refresh', () => load(), 'small'),
       btn('New issue', () => createIssue(r).then((ok) => ok && load()), { cls: 'primary small', iconName: 'plus' }));
   }
   async function load() {
-    mount(body, h('div', { class: 'progress' }));
+    mount(body, h('div', { class: 'progress' }), h('div', { class: 'skeleton' }, 'Loading…'));
     try {
       const list = await rpc('issue.list', { id: r.id, filter, state, search: searchIn.value.trim() });
       mount(body, list.length ? list.map((i) => h('div', { class: 'list-row', onclick: () => navigate(`#/repo/${r.id}/issues/${i.number}`) },
         icon('issue'), h('div', { class: 'grow' }, h('div', { class: 'row' }, h('span', { class: 't ellipsis' }, i.title), (i.labels || []).slice(0, 4).map((l) => h('span', { class: 'badge', style: { borderColor: `#${l.color}` } }, l.name))),
           h('div', { class: 'sub' }, `#${i.number} · ${i.author ? i.author.login : ''} · updated ${ago(i.updatedAt)}${(i.assignees || []).length ? ` · assigned to ${i.assignees.map((a) => a.login).join(', ')}` : ''}`)),
-        i.comments ? h('span', { class: 'badge' }, `${i.comments} comments`) : null)) : h('div', { class: 'empty' }, 'No issues.'));
+        (Array.isArray(i.comments) ? i.comments.length : i.comments) ? h('span', { class: 'badge' }, plural(Array.isArray(i.comments) ? i.comments.length : i.comments, 'comment')) : null))
+        : h('div', { class: 'empty' }, h('h3', null, searchIn.value.trim() ? 'No issues match' : `No ${state} issues`), h('div', null, searchIn.value.trim() ? 'Nothing fits the search.' : state === 'open' ? 'Nothing is waiting here.' : 'None have been closed yet.')));
     } catch (e) { mount(body, h('div', { class: 'errbox', style: { margin: '12px' } }, e.message)); }
   }
   renderBar(); load();
@@ -54,26 +55,37 @@ async function createIssue(r) {
 }
 
 function detail(view, r, number) {
-  const page = h('div', { class: 'page', style: { maxWidth: '980px' } });
+  const page = h('div', { class: 'page' });
   mount(view, page);
+  const back = () => iconBtn('back', 'Back to the list', () => navigate(`#/repo/${r.id}/issues`));
+  mount(page, h('div', { class: 'row', style: { marginBottom: '10px' } }, back(), h('h2', null, `Issue #${number}`)), h('div', { class: 'skeleton' }, 'Loading…'));
   async function load() {
     let i;
-    try { i = await rpc('issue.view', { id: r.id, number }); } catch (e) { mount(page, h('div', { class: 'errbox' }, e.message)); return; }
+    try { i = await rpc('issue.view', { id: r.id, number }); } catch (e) { mount(page, h('div', { class: 'row', style: { marginBottom: '10px' } }, back(), h('h2', null, `Issue #${number}`)), h('div', { class: 'errbox' }, e.message)); return; }
     const box = h('textarea', { rows: 4, placeholder: 'Comment (Markdown)', style: { width: '100%' } });
+    // The same shape as a pull request: the conversation on the left, what the issue is tagged with on the right.
+    const none = () => h('span', { class: 'faint' }, 'none');
+    const block = (title, content, onEdit) => h('div', { class: 'panel' },
+      h('div', { class: 'panel-head' }, h('h3', { class: 'grow' }, title), onEdit ? iconBtn('edit', 'Edit labels and assignees', onEdit) : null),
+      h('div', { class: 'panel-body col', style: { gap: '4px' } }, content));
+    const side = h('div', { class: 'col', style: { width: '280px', flex: 'none' } },
+      block('Labels', (i.labels || []).length ? h('div', { class: 'row wrap' }, i.labels.map((l) => h('span', { class: 'badge', style: { borderColor: `#${l.color}` } }, l.name))) : none(), () => editMeta(i)),
+      block('Assignees', (i.assignees || []).length ? i.assignees.map((a) => h('div', null, a.login)) : none(), () => editMeta(i)),
+      block('Milestone', i.milestone ? i.milestone.title : none()));
     mount(page,
-      h('div', { class: 'row', style: { marginBottom: '10px' } }, iconBtn('back', 'Back', () => navigate(`#/repo/${r.id}/issues`)),
+      h('div', { class: 'row', style: { marginBottom: '14px' } }, back(),
         h('h2', { class: 'grow' }, `${i.title} `, h('span', { class: 'muted' }, `#${i.number}`)),
         h('span', { class: `badge ${i.state === 'OPEN' ? 'ok' : ''}` }, i.state.toLowerCase()),
         btn('Create branch', () => branchFromIssue(i), { cls: 'small', iconName: 'branch' }),
-        btn('Labels & assignees', () => editMeta(i), { cls: 'small' }),
         i.state === 'OPEN' ? btn('Close…', () => closeIssue(i), { cls: 'small' }) : btn('Reopen', () => act(() => rpc('issue.reopen', { id: r.id, number }), { ok: 'Reopened' }).then(load), { cls: 'small' }),
-        btn('GitHub', () => rpc('open.url', { url: i.url }), { cls: 'small', iconName: 'external' })),
-      h('div', { class: 'row wrap', style: { marginBottom: '10px' } }, (i.labels || []).map((l) => h('span', { class: 'badge', style: { borderColor: `#${l.color}` } }, l.name)),
-        (i.assignees || []).length ? h('span', { class: 'muted' }, `Assigned to ${i.assignees.map((a) => a.login).join(', ')}`) : null, i.milestone ? h('span', { class: 'muted' }, `Milestone: ${i.milestone.title}`) : null),
-      h('div', { class: 'comment' }, h('div', { class: 'chead' }, h('strong', null, i.author ? i.author.login : ''), h('span', { class: 'muted' }, `opened ${ago(i.createdAt)}`)), h('div', { class: 'cbody' }, markdown(i.body))),
-      (i.comments || []).map((c) => h('div', { class: 'comment' }, h('div', { class: 'chead' }, h('strong', null, c.author ? c.author.login : ''), h('span', { class: 'muted' }, ago(c.createdAt))), h('div', { class: 'cbody' }, markdown(c.body)))),
-      box, h('div', { class: 'row', style: { marginTop: '6px' } }, h('span', { class: 'spacer' }),
-        btn('Comment', async () => { if (!box.value.trim()) return; if (await act(() => rpc('issue.comment', { id: r.id, number, body: box.value }), { ok: 'Comment posted' }) !== undefined) load(); }, { cls: 'primary' })));
+        btn('Open on GitHub', () => rpc('open.url', { url: i.url }), { cls: 'small', iconName: 'external' })),
+      h('div', { class: 'row', style: { alignItems: 'flex-start', gap: '18px' } },
+        h('div', { class: 'grow', style: { minWidth: 0 } },
+          h('div', { class: 'comment' }, h('div', { class: 'chead' }, h('strong', null, i.author ? i.author.login : ''), h('span', { class: 'muted' }, `opened ${ago(i.createdAt)}`)), h('div', { class: 'cbody' }, markdown(i.body))),
+          (i.comments || []).map((c) => h('div', { class: 'comment' }, h('div', { class: 'chead' }, h('strong', null, c.author ? c.author.login : ''), h('span', { class: 'muted' }, ago(c.createdAt))), h('div', { class: 'cbody' }, markdown(c.body)))),
+          box, h('div', { class: 'row', style: { marginTop: '6px' } }, h('span', { class: 'spacer' }),
+            btn('Comment', async () => { if (!box.value.trim()) return; if (await act(() => rpc('issue.comment', { id: r.id, number, body: box.value }), { ok: 'Comment posted' }) !== undefined) await load(); }, { cls: 'primary' }))),
+        side));
   }
   async function closeIssue(i) {
     const v = await form({ title: `Close #${i.number}?`, fields: [{ name: 'reason', label: 'Reason', type: 'select', value: 'completed', options: [{ value: 'completed', label: 'Completed' }, { value: 'not planned', label: 'Not planned' }] }], submit: 'Close issue' });

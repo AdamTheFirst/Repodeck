@@ -3,6 +3,7 @@ import { h, mount, icon, btn, iconBtn, act, modal, form, banner, confirmDanger, 
 import { rpc } from '../api.js';
 import { store, emit } from '../store.js';
 import { navigate } from '../router.js';
+import { THEMES } from '../themes.js';
 
 const GROUPS = [
   ['Workspace', [['accounts', 'Accounts & folders', 'user'], ['ssh', 'SSH connections', 'key'], ['gitconfig', 'Git configuration', 'commit']]],
@@ -125,7 +126,7 @@ async function accounts(el) {
         h('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap' } }, h('span', { class: 'set-name big' }, a.login),
           a.current ? h('span', { class: 'badge accent' }, 'this window') : null,
           a.elsewhere ? h('span', { class: 'badge' }, 'open in another window') : null,
-          a.active ? h('span', { class: 'badge', title: 'The account the gh command uses in a terminal' }, 'terminal default') : null,
+          a.active ? h('span', { class: 'badge', title: 'The account the gh command uses in a terminal' }, 'default in terminal') : null,
           a.state !== 'success' ? h('span', { class: 'badge bad' }, 'needs sign-in') : null),
         h('div', { class: 'set-desc' }, a.folders ? plural(a.folders, 'folder') : 'No folders')),
       h('div', { class: 'set-control' },
@@ -401,12 +402,28 @@ async function gitconfig(el) {
 // Repodeck behaviour
 // ======================================================================
 function behaviour(el) {
+  const perRepo = Object.entries(store.config.prBaseByRepo || {}).sort(([a], [b]) => a.localeCompare(b));
+  const baseIn = h('input', { type: 'text', class: 'txt', value: store.config.prBase || '', spellcheck: 'false', placeholder: 'default branch', 'aria-label': 'Base branch for pull requests',
+    onchange: async (e) => { const el2 = e.target; el2.value = el2.value.trim(); if (!(await save({ prBase: el2.value }))) el2.value = store.config.prBase || ''; } });
+  const forget = async (repoKey) => {
+    const next = { ...(store.config.prBaseByRepo || {}) };
+    delete next[repoKey];
+    if (await save({ prBaseByRepo: next }, 'Removed')) behaviour(el);
+  };
   mount(el, head('Behaviour', 'How Repodeck’s own buttons work. These do not change your git configuration.'),
     card(
       choice('pullStrategy', 'Pull and Sync', 'How remote commits are brought in', [['merge', 'Merge'], ['rebase', 'Rebase'], ['ff-only', 'Fast-forward only']]),
       choice('updateFromDefault', 'Update from default branch', 'How a feature branch that is behind main is brought up to date', [['merge', 'Merge the default branch in'], ['rebase', 'Rebase onto the default branch']]),
       number('refreshSeconds', 'Status refresh', 'Also refreshes when the window gets focus and after every action', 5, 'seconds'),
       number('bulkConcurrency', 'Repositories handled at once', 'For bulk operations such as Fetch all', 1)),
+    sub('Pull requests', 'Which branch a new pull request opens into. You can still pick another one each time.'),
+    card(
+      row('Base branch', 'Used in every repository that has a branch with this name, for example develop. Repositories without it, and all of them when this is empty, use their default branch.', baseIn),
+      perRepo.map(([repoKey, branch]) => row(repoKey, ['Pull requests in this repository open into ', h('code', null, branch)], btn('Remove', () => forget(repoKey), { cls: 'small' }))),
+      h('div', { class: 'card-note' }, 'To set a branch for one repository, pick it on the New pull request page and choose “Always use … for this repository”.')),
+    sub('GitHub Copilot', 'Copilot can write commit messages and pull request text. It needs the GitHub Copilot CLI on this computer and a Copilot plan on the account.'),
+    card(
+      toggle('copilotButtons', 'Show the Copilot buttons', 'On the commit box and the New pull request page. Pressing one sends the diff to GitHub Copilot as the open account; nothing is sent otherwise.')),
     sub('Background', 'Nothing changes in your repositories in the background unless you turn this on.'),
     card(
       toggle('backgroundFetch', 'Fetch all repositories periodically', 'Keeps ahead/behind counts current. Never pulls, merges or prunes.'),
@@ -445,9 +462,25 @@ function tools(el) {
 }
 
 function app(el) {
+  // A small picture of each look: ground, a panel with two lines of text, and the accent.
+  const preview = (t) => {
+    const half = (s, cls) => h('span', { class: `theme-prev ${cls || ''}`, style: { background: s[0] } },
+      h('i', { class: 'p', style: { background: s[1] } }), h('i', { class: 'l', style: { background: s[2] } }), h('i', { class: 'l two', style: { background: s[2] } }), h('i', { class: 'a', style: { background: s[2] } }));
+    if (t.swatch) return half(t.swatch);
+    const [light, dark] = [THEMES.find((x) => x.id === 'light').swatch, THEMES.find((x) => x.id === 'dark').swatch];
+    return h('span', { class: 'theme-prev split' }, half(light, 'left'), half(dark, 'right'));
+  };
+  const grid = h('div', { class: 'theme-grid', role: 'radiogroup', 'aria-label': 'Theme' });
+  const drawThemes = () => mount(grid, THEMES.map((t) => h('button', {
+    type: 'button', class: `theme-tile ${store.config.theme === t.id ? 'on' : ''}`, role: 'radio', 'aria-checked': store.config.theme === t.id ? 'true' : 'false', title: t.note || t.name,
+    onclick: async () => { if (store.config.theme !== t.id && await save({ theme: t.id }, `Theme: ${t.name}`)) drawThemes(); },
+  }, preview(t), h('span', { class: 'theme-name' }, store.config.theme === t.id ? icon('check', 'sm') : null, t.name))));
+  drawThemes();
   mount(el, head('Appearance & app'),
+    sub('Theme', 'Applies to this computer, for every account.'),
+    card(grid),
+    sub('Window'),
     card(
-      row('Theme', null, seg(store.config.theme, [['system', 'Follow Windows'], ['light', 'Light'], ['dark', 'Dark']], (v) => save({ theme: v }))),
       toggle('closeToTray', 'Close button hides the window to the tray', 'Repodeck keeps running next to the clock. Click its icon to open it again; right-click it to quit.'),
       toggle('keepRunningWhenClosed', 'Keep running after the window really closes', 'When you quit from the tray, or the tray option is off: notifications still arrive. Reopen from the Start menu.'),
       number('port', 'Local port', 'Takes effect after a restart', 1025)),
@@ -554,6 +587,7 @@ async function diagnostics(el) {
 }
 
 async function about(el) {
+  mount(el, head('About'), loading());
   const a = await rpc('app.about').catch(() => ({ version: '?' }));
   const upText = h('div', { class: 'set-desc' }, 'Checking…');
   const upTools = h('div', { class: 'row' });
