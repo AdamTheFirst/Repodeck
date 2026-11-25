@@ -1,6 +1,7 @@
 // Branches, tags, remotes, worktrees and submodules.
 import { h, mount, icon, btn, act, menuAt, confirmDanger, form, prompt, ago, copyText, banner, showError } from '../dom.js';
 import { rpc } from '../api.js';
+import { subscribe } from '../store.js';
 import { fetchRepo } from '../fetch.js';
 import { navigate } from '../router.js';
 import { createBranchDialog, switchTo } from '../repoview.js';
@@ -10,16 +11,43 @@ export function render(view, r) {
   mount(view, page);
   let disposed = false;
   let filter = '';
+  let data = null;     // what the last load brought: { refs, remotes, worktrees, subs }
+  let shown = '';      // the refs as last loaded, to tell whether anything moved
+  mount(page, h('div', { class: 'skeleton' }, 'Loading…'));
+  // Made once and kept across redraws, so typing in it filters what is already here and never loses the cursor.
+  const search = h('input', { type: 'search', placeholder: 'Filter branches and tags', style: { width: '260px' }, oninput: (e) => { filter = e.target.value; draw(); } });
 
   async function load() {
     let refs;
-    try { refs = await rpc('repo.refs', { id: r.id }); } catch (e) { mount(page, h('div', { class: 'errbox' }, e.message)); return; }
+    try { refs = await rpc('repo.refs', { id: r.id }); } catch (e) { if (!disposed) mount(page, h('div', { class: 'errbox' }, e.message)); return; }
     if (disposed) return;
     const [remotes, worktrees, subs] = await Promise.all([
       rpc('repo.remotes', { id: r.id }).catch(() => []), rpc('repo.worktrees', { id: r.id }).catch(() => []), rpc('repo.submodules', { id: r.id }).catch(() => []),
     ]);
+    if (disposed) return;
+    data = { refs, remotes, worktrees, subs };
+    shown = JSON.stringify(refs);
+    draw();
+  }
+
+  // The header's Pull, Push and Fetch, a commit, a switch made elsewhere: reload when the branches really changed.
+  let checking = false;
+  async function follow() {
+    if (disposed || !data || checking) return;
+    checking = true;
+    try { const refs = await rpc('repo.refs', { id: r.id }); if (!disposed && JSON.stringify(refs) !== shown) await load(); } catch { /* the next change tries again */ } finally { checking = false; }
+  }
+
+  function draw() {
+    if (!data) return;
+    const { refs, remotes, worktrees, subs } = data;
+    const typing = document.activeElement === search;
     const f = (b) => !filter || b.name.toLowerCase().includes(filter.toLowerCase());
-    const search = h('input', { type: 'search', placeholder: 'Filter branches and tags', value: filter, style: { width: '260px' }, oninput: (e) => { filter = e.target.value; load(); } });
+    const none = (cols, what) => (filter ? h('tr', null, h('td', { colspan: cols, class: 'muted' }, `No ${what} match “${filter}”.`)) : null);
+    const locals = refs.local.filter(f);
+    const remoteBranches = refs.remote.filter(f);
+    const tags = refs.tags.filter(f);
+    const nothing = (text) => h('div', { class: 'panel' }, h('div', { class: 'empty', style: { padding: '22px' } }, text));
     mount(page,
       h('div', { class: 'row', style: { marginBottom: '12px' } }, search, h('span', { class: 'spacer' }),
         btn('New branch', () => createBranchDialog(r).then(load), { cls: 'primary', iconName: 'plus' }),
@@ -28,35 +56,40 @@ export function render(view, r) {
       h('div', { class: 'section-title' }, h('h2', null, 'Local branches'), h('span', { class: 'faint' }, refs.defaultRemoteRef ? `merged = contained in ${refs.defaultRemoteRef}` : '')),
       h('table', { class: 'grid panel' },
         h('tr', null, h('th', null, 'Branch'), h('th', null, 'Upstream'), h('th', null, 'Ahead / behind'), h('th', null, 'Last commit'), h('th', null, '')),
-        refs.local.filter(f).sort((a, b) => (b.current - a.current) || (b.time - a.time)).map((b) => h('tr', { class: 'clickable', oncontextmenu: (e) => menuAt(e, localMenu(b, refs)), ondblclick: () => !b.current && switchTo(r, { name: b.name }).then(load) },
+        locals.length ? null : none(5, 'local branches'),
+        locals.sort((a, b) => (b.current - a.current) || (b.time - a.time)).map((b) => h('tr', { class: 'clickable', oncontextmenu: (e) => menuAt(e, localMenu(b, refs)), ondblclick: () => !b.current && switchTo(r, { name: b.name }).then(load) },
           h('td', null, h('div', { class: 'row' }, icon('branch', 'sm'), h('strong', { style: { fontWeight: b.current ? 700 : 500 } }, b.name),
             b.current ? h('span', { class: 'badge accent' }, 'current') : null, b.name === refs.defaultBranch ? h('span', { class: 'badge' }, 'default') : null,
             b.merged && b.name !== refs.defaultBranch ? h('span', { class: 'badge ok' }, 'merged') : null)),
           h('td', null, b.upstream ? h('span', { class: b.gone ? 'muted' : '' }, b.upstream, b.gone ? h('span', { class: 'badge bad', style: { marginLeft: '6px' } }, 'gone') : null) : h('span', { class: 'faint' }, 'not published')),
-          h('td', null, b.upstream && !b.gone ? `${b.ahead} ↑  ${b.behind} ↓` : ''),
-          h('td', { class: 'muted' }, h('div', { class: 'ellipsis', style: { maxWidth: '380px' } }, b.subject), h('div', { class: 'faint', style: { fontSize: '11px' } }, `${b.author} · ${ago(b.time)}`)),
+          h('td', null, b.upstream && !b.gone ? (b.ahead || b.behind
+            ? h('span', { class: 'row', style: { gap: '4px' } }, b.ahead ? h('span', { class: 'badge info', title: `${b.ahead} to push` }, `↑ ${b.ahead}`) : null, b.behind ? h('span', { class: 'badge warn', title: `${b.behind} to pull` }, `↓ ${b.behind}`) : null)
+            : h('span', { class: 'muted' }, 'in sync')) : ''),
+          h('td', { class: 'muted ellipsis', title: b.subject }, b.subject, h('div', { class: 'faint', style: { fontSize: '11px' } }, `${b.author} · ${ago(b.time)}`)),
           h('td', { style: { textAlign: 'right', whiteSpace: 'nowrap' } },
             !b.current ? btn('Switch', () => switchTo(r, { name: b.name }).then(load), { cls: 'small' }) : null, ' ',
             btn('', (e) => menuAt(e, localMenu(b, refs)), { cls: 'small icon', iconName: 'more', title: 'More' }))))),
       h('div', { class: 'section-title' }, h('h2', null, 'Remote branches')),
       h('table', { class: 'grid panel' },
         h('tr', null, h('th', null, 'Branch'), h('th', null, 'Last commit'), h('th', null, '')),
-        refs.remote.filter(f).sort((a, b) => b.time - a.time).slice(0, 300).map((b) => h('tr', { oncontextmenu: (e) => menuAt(e, remoteMenu(b)) },
+        remoteBranches.length ? null : (none(3, 'remote branches') || h('tr', null, h('td', { colspan: 3, class: 'muted' }, 'No remote branches yet. Fetch, or publish a branch.'))),
+        remoteBranches.sort((a, b) => b.time - a.time).slice(0, 300).map((b) => h('tr', { oncontextmenu: (e) => menuAt(e, remoteMenu(b)) },
           h('td', null, h('div', { class: 'row' }, icon('branch', 'sm'), b.name)),
-          h('td', { class: 'muted' }, h('div', { class: 'ellipsis', style: { maxWidth: '420px' } }, b.subject), h('div', { class: 'faint', style: { fontSize: '11px' } }, `${b.author} · ${ago(b.time)}`)),
+          h('td', { class: 'muted ellipsis', title: b.subject }, b.subject, h('div', { class: 'faint', style: { fontSize: '11px' } }, `${b.author} · ${ago(b.time)}`)),
           h('td', { style: { textAlign: 'right' } }, btn('Check out', () => checkoutRemote(b), { cls: 'small' }), ' ', btn('', (e) => menuAt(e, remoteMenu(b)), { cls: 'small icon', iconName: 'more' }))))),
       h('div', { class: 'section-title' }, h('h2', null, 'Tags'), h('span', { class: 'spacer' }),
         btn('New tag', () => newTag(), { cls: 'small', iconName: 'plus' }), btn('Push all tags', () => act(() => rpc('repo.pushTags', { id: r.id }), { ok: 'Tags pushed' }), { cls: 'small', iconName: 'push' })),
       refs.tags.length ? h('table', { class: 'grid panel' },
         h('tr', null, h('th', null, 'Tag'), h('th', null, 'Commit'), h('th', null, 'Type'), h('th', null, '')),
-        refs.tags.filter(f).sort((a, b) => b.time - a.time).slice(0, 300).map((t) => h('tr', null,
+        tags.length ? null : none(4, 'tags'),
+        tags.sort((a, b) => b.time - a.time).slice(0, 300).map((t) => h('tr', null,
           h('td', null, h('div', { class: 'row' }, icon('tag', 'sm'), t.name)),
           h('td', { class: 'wrapcell' }, h('a', { class: 'mono', onclick: () => navigate(`#/repo/${r.id}/graph/${t.target}`) }, t.target.slice(0, 8)), ' ', h('span', { class: 'muted' }, t.subject)),
           h('td', { class: 'muted' }, t.annotated ? 'annotated' : 'lightweight'),
           h('td', { style: { textAlign: 'right', whiteSpace: 'nowrap' } },
             btn('Push', () => act(() => rpc('tag.push', { id: r.id, name: t.name }), { ok: 'Tag pushed' }), { cls: 'small' }), ' ',
             btn('Delete…', () => deleteTag(t), { cls: 'small danger' })))))
-        : h('div', { class: 'muted' }, 'No tags.'),
+        : nothing('No tags yet.'),
       h('div', { class: 'section-title' }, h('h2', null, 'Remotes'), h('span', { class: 'spacer' }), btn('Add remote', () => addRemote(), { cls: 'small', iconName: 'plus' })),
       remotes.length ? h('table', { class: 'grid panel' }, h('tr', null, h('th', null, 'Name'), h('th', null, 'URL'), h('th', null, '')),
         remotes.map((rm) => h('tr', null, h('td', null, rm.name), h('td', { class: 'mono wrapcell', style: { wordBreak: 'break-all' } }, rm.url, rm.pushUrl ? h('div', { class: 'faint' }, `push: ${rm.pushUrl}`) : null),
@@ -64,7 +97,7 @@ export function render(view, r) {
             btn('Copy', () => copyText(rm.url), { cls: 'small' }), ' ',
             btn('Change URL…', () => changeUrl(rm), { cls: 'small' }), ' ',
             btn('Remove…', () => removeRemote(rm), { cls: 'small danger' })))))
-        : h('div', { class: 'muted' }, 'No remotes. Add one to push and to use GitHub features.'),
+        : nothing('No remotes. Add one to push and to use the GitHub features.'),
       h('div', { class: 'section-title' }, h('h2', null, 'Worktrees'), h('span', { class: 'spacer' }), btn('Add worktree', () => addWorktree(refs), { cls: 'small', iconName: 'plus' })),
       h('table', { class: 'grid panel' }, h('tr', null, h('th', null, 'Folder'), h('th', null, 'Branch'), h('th', null, '')),
         worktrees.map((w, i) => h('tr', null, h('td', { class: 'mono' }, w.path, i === 0 ? h('span', { class: 'badge', style: { marginLeft: '6px' } }, 'main') : null, w.prunable ? h('span', { class: 'badge warn', style: { marginLeft: '6px' } }, 'missing') : null),
@@ -76,6 +109,7 @@ export function render(view, r) {
           subs.map((s) => h('tr', null, h('td', { class: 'mono' }, s.path), h('td', { class: 'mono' }, s.hash.slice(0, 10), ' ', h('span', { class: 'muted' }, s.describe)),
             h('td', null, h('span', { class: `badge ${s.code === ' ' ? 'ok' : s.code === 'U' ? 'bad' : 'warn'}` }, s.state))))),
       ] : null);
+    if (typing) search.focus();
   }
 
   function localMenu(b, refs) {
@@ -205,5 +239,6 @@ export function render(view, r) {
   }
 
   load();
-  return { dispose() { disposed = true; }, onSummary: () => {} };
+  const unsub = subscribe('refresh', follow);
+  return { dispose() { disposed = true; unsub(); }, onSummary: follow };
 }

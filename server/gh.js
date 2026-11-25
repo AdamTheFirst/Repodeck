@@ -47,6 +47,16 @@ async function envFor(login) {
   return { GH_TOKEN: await tokenFor(login), GH_HOST: HOST };
 }
 
+/**
+ * Environment that makes another GitHub program (the Copilot CLI) run as the open account.
+ * The token is passed on in the environment only; it is never logged or saved.
+ */
+async function tokenEnv() {
+  const login = accountForOwner() || (await activeLogin());
+  if (!login) throw ghError('Sign in to GitHub first (account button at the top right).', 'auth');
+  return { login, env: { GH_TOKEN: await tokenFor(login), GH_HOST: HOST } };
+}
+
 function ghError(message, kind) {
   const e = new Error(message);
   e.kind = kind;
@@ -121,6 +131,14 @@ const R = (s) => ['-R', `${s.owner}/${s.repo}`];
 const O = (s) => ({ owner: s.owner, login: s.account || undefined, repoLabel: s.label || s.repo });
 
 // ---------------- repository metadata ----------------
+
+/** Whether the repository on GitHub has this branch. Anything but a clear yes counts as no. */
+async function branchExists(s, name) {
+  try {
+    await gh(['api', `repos/${s.owner}/${s.repo}/branches/${String(name).split('/').map(encodeURIComponent).join('/')}`, '--jq', '.name'], { ...O(s), quiet: true, timeout: 20_000 });
+    return true;
+  } catch { return false; }
+}
 
 async function repoMeta(s, force = false) {
   const key = `${s.owner}/${s.repo}`.toLowerCase();
@@ -312,13 +330,12 @@ async function prMergeCommit(s, n) {
 }
 
 async function prTemplate(s, base) {
-  for (const p of ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md']) {
-    try {
-      const r = await gh(['api', `repos/${s.owner}/${s.repo}/contents/${p}${base ? `?ref=${encodeURIComponent(base)}` : ''}`, '-H', 'Accept: application/vnd.github.raw'], { ...O(s), quiet: true });
-      if (r.stdout) return r.stdout;
-    } catch {}
-  }
-  return '';
+  // All the places a template can be are asked at once (a repository usually has none, and five
+  // questions in a row made the New pull request page slow); the first place in this order wins.
+  const places = ['.github/pull_request_template.md', '.github/PULL_REQUEST_TEMPLATE.md', 'pull_request_template.md', 'PULL_REQUEST_TEMPLATE.md', 'docs/pull_request_template.md'];
+  const found = await Promise.all(places.map((p) => gh(['api', `repos/${s.owner}/${s.repo}/contents/${p}${base ? `?ref=${encodeURIComponent(base)}` : ''}`, '-H', 'Accept: application/vnd.github.raw'], { ...O(s), quiet: true })
+    .then((r) => r.stdout || '', () => '')));
+  return found.find(Boolean) || '';
 }
 
 async function collaborators(s) {
@@ -525,7 +542,7 @@ async function version() {
 }
 
 module.exports = {
-  accounts, activeLogin, accountForOwner, forgetAccounts, checkAccess, classify, repoMeta,
+  accounts, activeLogin, accountForOwner, forgetAccounts, checkAccess, classify, repoMeta, branchExists, tokenEnv,
   prList, prView, prDiff, prThreads, prCreate, prComment, editIssueComment, deleteIssueComment, editReviewComment, deleteReviewComment,
   replyReviewComment, setThreadResolved, setFileViewed, submitReview, prEdit, prReady, prClose, prReopen, prMerge, prDisableAuto,
   prUpdateBranch, prMergeCommit, prTemplate, collaborators, labels, milestones,

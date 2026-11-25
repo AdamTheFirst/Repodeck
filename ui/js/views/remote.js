@@ -59,12 +59,14 @@ export function render(main) {
     const rows = all.filter((r) => (archived || !r.isArchived) && (!owner || r.owner === owner) && (!text || r.nameWithOwner.toLowerCase().includes(text) || (r.description || '').toLowerCase().includes(text))
       && (show === 'all' || (show === 'cloned') === local.has(r.nameWithOwner.toLowerCase())));
     const clonedCount = all.filter((r) => local.has(r.nameWithOwner.toLowerCase())).length;
+    const typing = document.activeElement === search; // the bar is redrawn around the box; give the cursor back
     mount(barEl,
       h('div', { class: 'pill-tabs' }, [['all', `All (${all.length})`], ['missing', `Not cloned (${all.length - clonedCount})`], ['cloned', `Cloned (${clonedCount})`]].map(([k, l]) => h('button', { class: show === k ? 'active' : '', onclick: () => { show = k; prefs.set('remoteShow', k); draw(); } }, l))),
       search,
       h('select', { onchange: (e) => { owner = e.target.value; draw(); } }, h('option', { value: '' }, 'All owners'), owners.map((o) => h('option', { value: o, selected: o === owner }, o))),
       h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: archived, onchange: (e) => { archived = e.target.checked; draw(); } }), 'Archived'),
       h('span', { class: 'spacer' }));
+    if (typing) search.focus();
     cloneBar.classList.toggle('hidden', !chosen.size);
     mount(cloneBar, h('strong', null, `${plural(chosen.size, 'repository')} selected`), btn('Clone selected', () => clone(all.filter((r) => chosen.has(r.nameWithOwner))), { cls: 'small primary', iconName: 'fetch' }),
       h('span', { class: 'spacer' }), btn('Clear', () => { chosen.clear(); draw(); }, { cls: 'small ghost' }));

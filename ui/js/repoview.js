@@ -36,6 +36,10 @@ export function renderRepo(main, id, tab, sub) {
     const pushLabel = !s.upstream && s.branch ? 'Publish' : s.ahead ? `Push ${s.ahead}` : 'Push';
     const b = boardFor(r);
     const bs = boardState(b);
+    // The header is drawn again the moment an operation starts, so the buttons take their state from the
+    // repository: none can be pressed while one runs, and the one that runs keeps its spinner.
+    const busy = !!r.busy;
+    const doing = (name) => (busy && new RegExp(`^${name}\\b`, 'i').test(r.busy.label || '') ? ' is-busy' : '');
     mount(head,
       h('div', { class: 'col', style: { gap: '0', minWidth: '120px', flex: '0 1 auto', overflow: 'hidden' } },
         h('div', { class: 'row' }, h('span', { class: 'title ellipsis' }, r.label), r.slug && r.slug.github ? h('a', { class: 'faint ellipsis', style: { fontSize: '12px' }, onclick: () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}` }) }, `${r.slug.owner}/${r.slug.repo}`) : null),
@@ -44,20 +48,22 @@ export function renderRepo(main, id, tab, sub) {
       h('button', { class: 'btn', title: 'Switch branch', onclick: (e) => branchMenu(e.currentTarget) },
         icon('branch'), s.detached ? `detached @ ${(s.oid || '').slice(0, 8)}` : s.branch || '(no commits)', icon('chevronDown', 'sm')),
       s.upstream ? h('span', { class: 'faint', style: { fontSize: '12px' }, title: 'Upstream' }, `→ ${s.upstream}`) : null,
-      s.upstream && s.behind ? h('span', { class: 'badge warn', title: `${s.upstream} has ${s.behind} commit(s) that ${s.branch} does not have. Pull to bring them in.` }, `↓ ${s.behind} behind`) : null,
-      s.upstream && s.ahead ? h('span', { class: 'badge info', title: `${s.ahead} commit(s) to push` }, `↑ ${s.ahead} ahead`) : null,
+      s.upstream && s.behind ? h('span', { class: 'badge warn', title: `${s.upstream} has ${plural(s.behind, 'commit')} that ${s.branch} does not have. Pull to bring them in.` }, `↓ ${s.behind} behind`) : null,
+      s.upstream && s.ahead ? h('span', { class: 'badge info', title: `${plural(s.ahead, 'commit')} to push` }, `↑ ${s.ahead} ahead`) : null,
       s.defaultBranch && s.branch && s.branch !== s.defaultBranch && s.behindDefault
-        ? h('button', { class: 'btn small', title: `${s.behindDefault} commit(s) on ${s.defaultRemoteRef} are not in this branch`, onclick: () => updateFromDefault(r) }, icon('warn', 'sm'), `${s.behindDefault} behind ${s.defaultBranch}`) : null,
-      h('span', { class: 'spacer' }),
+        ? h('button', { class: 'btn small', disabled: busy, title: `${s.defaultRemoteRef} has ${plural(s.behindDefault, 'commit')} that this branch does not have. Brings them in (${store.config.updateFromDefault}), after asking.`, onclick: () => updateFromDefault(r) }, icon('merge', 'sm'), `Update from ${s.defaultBranch} (${s.behindDefault} behind)`) : null,
+      // The actions stay together: when the window is too narrow for one line they move down as a group,
+      // instead of leaving one button alone on a second line.
+      h('div', { class: 'row head-actions' },
+      r.busy ? h('span', { class: 'badge run' }, icon('refresh', 'sm spin'), r.busy.label) : null,
       bs ? h('button', { class: 'btn small ghost', title: `Latest workflow runs on ${b.branch}`, onclick: () => navigate(`#/repo/${r.id}/actions`) },
         h('span', { class: `dot ${bs === 'failure' ? 'bad' : bs === 'running' ? 'run' : bs === 'success' ? 'ok' : ''}` }), `${b.branch}: ${bs === 'failure' ? 'failing' : bs === 'running' ? 'running' : bs === 'success' ? 'passing' : bs}`) : null,
       h('div', { class: 'btngroup' },
-        btn('Fetch', () => fetchRepo(r), { iconName: 'fetch', title: 'Fetch from all remotes' }),
-        btn(pullLabel, () => pull(r), { iconName: 'pull', cls: s.behind ? 'attn' : '', title: s.behind ? `${s.behind} commit(s) on ${s.upstream} are not in ${s.branch} yet. Pull (${store.config.pullStrategy})` : `Pull (${store.config.pullStrategy})`, disabled: !s.upstream }),
-        btn(pushLabel, () => push(r), { iconName: 'push', title: s.upstream ? 'Push commits' : 'Publish this branch to origin', disabled: !s.branch }),
-        btn('Sync', () => act(() => rpc('repo.sync', { id: r.id }), { ok: 'Synced' }), { iconName: 'sync', title: 'Pull, then push', disabled: !s.upstream })),
-      iconBtn('more', 'More actions', (e) => menuBelow(e.currentTarget, moreMenu(r))),
-      r.busy ? h('span', { class: 'badge run' }, icon('refresh', 'sm spin'), r.busy.label) : null);
+        btn('Fetch', () => fetchRepo(r), { iconName: 'fetch', cls: doing('fetch'), title: 'Fetch from all remotes', disabled: busy }),
+        btn(pullLabel, () => pull(r), { iconName: 'pull', cls: `${s.behind ? 'attn' : ''}${doing('pull')}`, title: s.behind ? `${s.upstream} has ${plural(s.behind, 'commit')} that ${s.branch} does not have yet. Pull (${store.config.pullStrategy})` : `Pull (${store.config.pullStrategy})`, disabled: !s.upstream || busy }),
+        btn(pushLabel, () => push(r), { iconName: 'push', cls: doing('push'), title: s.upstream ? 'Push commits' : 'Publish this branch to origin', disabled: !s.branch || busy }),
+        btn('Sync', () => act(() => rpc('repo.sync', { id: r.id }), { ok: 'Synced' }), { iconName: 'sync', cls: doing('sync'), title: 'Pull, then push', disabled: !s.upstream || busy })),
+      iconBtn('more', 'More actions', (e) => menuBelow(e.currentTarget, moreMenu(r)))));
     renderState();
   }
 
@@ -139,6 +145,7 @@ export function renderRepo(main, id, tab, sub) {
   const unsubs = [
     subscribe('summary', (sid) => { if (sid === id && !disposed) { renderHead(); renderTabs(); loadRefCounts(); if (disposeTab && disposeTab.onSummary) disposeTab.onSummary(); } }),
     subscribe('board', () => { if (!disposed) { renderHead(); renderTabs(); } }),
+    subscribe('repos', () => { if (!disposed && store.byId.has(id)) { renderHead(); renderTabs(); } }),
   ];
   renderHead(); renderTabs();
   rpc('repo.summary', { id }).catch(() => {});
@@ -219,7 +226,7 @@ async function updateFromDefault(r) {
   const s = r.summary;
   const how = store.config.updateFromDefault;
   if (s.dirty) { banner({ level: 'warn', title: 'Commit or stash your changes first', timeout: 4000 }); return; }
-  const ok = await confirmDanger({ title: `Update from ${s.defaultBranch}?`, message: `${how === 'rebase' ? 'Rebase' : 'Merge'} ${s.behindDefault} new commit(s) from ${s.defaultRemoteRef} into ${s.branch}.${how === 'rebase' && s.upstream ? ' Rebasing a pushed branch means you will need to force push.' : ''}`, confirmLabel: how === 'rebase' ? 'Rebase' : 'Merge', danger: false });
+  const ok = await confirmDanger({ title: `Update from ${s.defaultBranch}?`, message: `${how === 'rebase' ? 'Rebase' : 'Merge'} ${plural(s.behindDefault, 'new commit')} from ${s.defaultRemoteRef} into ${s.branch}.${how === 'rebase' && s.upstream ? ' Rebasing a pushed branch means you will need to force push.' : ''}`, confirmLabel: how === 'rebase' ? 'Rebase' : 'Merge', danger: false });
   if (!ok) return;
   await act(() => rpc(how === 'rebase' ? 'branch.rebase' : 'branch.merge', how === 'rebase' ? { id: r.id, onto: s.defaultRemoteRef } : { id: r.id, rev: s.defaultRemoteRef }), { ok: `Updated from ${s.defaultBranch}` });
 }

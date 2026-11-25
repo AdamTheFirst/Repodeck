@@ -81,6 +81,7 @@ const ICONS = {
   book: 'M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h11M9 8h6',
   user: 'M12 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM4 21a8 8 0 0 1 16 0',
   sliders: 'M4 7h10m4 0h2M4 17h2m4 0h10M16 5v4M8 15v4',
+  sparkle: 'M10 4l1.6 4.4L16 10l-4.4 1.6L10 16l-1.6-4.4L4 10l4.4-1.6zM18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z',
 };
 export function icon(name, cls = '') {
   const ns = 'http://www.w3.org/2000/svg';
@@ -94,12 +95,29 @@ export function icon(name, cls = '') {
   return svg;
 }
 
+/**
+ * A button whose action is still running shows a spinner and takes no second click.
+ * `result` is whatever the click handler returned; only a promise makes the button busy.
+ * The spinner waits a moment, so an action that finishes at once does not flicker.
+ */
+export function busyWhile(el, result) {
+  if (!result || typeof result.then !== 'function') return result;
+  el.dataset.busy = '1';
+  el.setAttribute('aria-busy', 'true');
+  const t = setTimeout(() => el.classList.add('is-busy'), 160);
+  const done = () => { clearTimeout(t); delete el.dataset.busy; el.removeAttribute('aria-busy'); el.classList.remove('is-busy'); };
+  result.then(done, done);
+  return result;
+}
+/** Click handler that ignores clicks while the previous one is still at work. */
+const once = (onClick) => (onClick ? (e) => { const el = e.currentTarget; if (el.dataset.busy) return undefined; return busyWhile(el, onClick(e)); } : undefined);
+
 export function btn(label, onClick, { cls = '', title, iconName, disabled, type } = {}) {
-  return h('button', { class: `btn ${cls}`, title: title || (typeof label === 'string' && !label ? undefined : title), onclick: onClick, disabled, type: type || 'button' },
+  return h('button', { class: `btn ${cls}`, title: title || (typeof label === 'string' && !label ? undefined : title), onclick: once(onClick), disabled, type: type || 'button' },
     iconName ? icon(iconName) : null, label || null);
 }
 export function iconBtn(name, title, onClick, cls = '') {
-  return h('button', { class: `btn icon ghost ${cls}`, title, 'aria-label': title, onclick: (e) => { e.stopPropagation(); onClick(e); } }, icon(name));
+  return h('button', { class: `btn icon ghost ${cls}`, title, 'aria-label': title, onclick: once((e) => { e.stopPropagation(); return onClick(e); }) }, icon(name));
 }
 
 // ---------- formatting ----------
@@ -465,15 +483,21 @@ export function statusBadge(status, conclusion) {
   const s = (status || '').toLowerCase(); const c = (conclusion || '').toLowerCase();
   if (s && s !== 'completed') return h('span', { class: 'badge run' }, h('span', { class: 'dot run' }), s.replace(/_/g, ' '));
   if (c === 'success') return h('span', { class: 'badge ok' }, icon('check', 'sm'), 'passed');
-  if (['failure', 'timed_out', 'startup_failure', 'action_required', 'error'].includes(c)) return h('span', { class: 'badge bad' }, icon('x', 'sm'), c.replace(/_/g, ' '));
+  if (['failure', 'timed_out', 'startup_failure', 'action_required', 'error'].includes(c)) return h('span', { class: 'badge bad' }, icon('x', 'sm'), c === 'failure' ? 'failed' : c.replace(/_/g, ' '));
   if (c === 'cancelled') return h('span', { class: 'badge' }, 'cancelled');
   if (c === 'skipped' || c === 'neutral') return h('span', { class: 'badge' }, c);
   return h('span', { class: 'badge' }, c || s || 'unknown');
+}
+/** The combined state of a pull request's checks, in words. */
+export function checksBadge(state, short) {
+  if (!state) return null;
+  const word = state === 'success' ? 'passed' : state === 'failure' || state === 'error' ? 'failed' : 'running';
+  return h('span', { class: `badge ${word === 'passed' ? 'ok' : word === 'failed' ? 'bad' : 'run'}` }, short ? word : `checks ${word}`);
 }
 export function runDot(status, conclusion) {
   const s = (status || '').toLowerCase(); const c = (conclusion || '').toLowerCase();
   if (s && s !== 'completed') return h('span', { class: 'dot run', title: s });
   if (c === 'success') return h('span', { class: 'dot ok', title: 'passed' });
-  if (['failure', 'timed_out', 'startup_failure', 'action_required', 'error'].includes(c)) return h('span', { class: 'dot bad', title: c });
+  if (['failure', 'timed_out', 'startup_failure', 'action_required', 'error'].includes(c)) return h('span', { class: 'dot bad', title: c === 'failure' ? 'failed' : c.replace(/_/g, ' ') });
   return h('span', { class: 'dot', title: c || s });
 }

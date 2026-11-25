@@ -28,10 +28,13 @@ export function render(view, r) {
       stashes.length > 1 ? h('div', { style: { padding: '10px' } }, btn('Clear all stashes…', async () => {
         if (await confirmDanger({ title: 'Delete every stash?', message: `All ${stashes.length} stashes will be deleted:`, items: stashes.map((s) => `${s.ref}: ${s.message}`), recover: 'Not recoverable from Repodeck.', confirmLabel: 'Clear all' })) act(() => rpc('stash.clear', { id: r.id }), { ok: 'Stashes cleared' }).then(load);
       }, { cls: 'small danger' })) : null);
-    if (!selected) { mount(filesEl, h('div', { class: 'empty' }, stashes.length ? 'Select a stash to see its changes.' : '')); diff.set({ files: [] }); }
+    // Nothing selected: one clear message, not an empty file strip above a diff toolbar that says "No differences".
+    if (!selected) mount(right, h('div', { class: 'empty' }, h('h3', null, stashes.length ? 'Select a stash' : 'No stashes yet'),
+      h('div', null, stashes.length ? 'Its files and changes are shown here.' : '“Stash changes…” puts uncommitted work aside, so you can switch tasks and bring it back later.')));
   }
 
   async function show(s) {
+    mount(right, filesEl, diff.el);
     const actions = h('div', { class: 'diff-toolbar' },
       h('strong', { class: 'grow ellipsis' }, `${s.ref}: ${s.message}`),
       btn('Apply', () => apply(s, false), { cls: 'small' }),

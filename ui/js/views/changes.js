@@ -1,11 +1,12 @@
 // Changes tab: VS Code Source Control equivalent.
-import { h, mount, icon, btn, iconBtn, act, menuAt, menuBelow, confirmDanger, banner, plural, showError, debounce, ago, form, markdown, modal } from '../dom.js';
+import { h, mount, icon, btn, iconBtn, busyWhile, act, menuAt, menuBelow, confirmDanger, banner, plural, showError, debounce, ago, form, markdown, modal, checksBadge } from '../dom.js';
 import { rpc } from '../api.js';
 import { prefs, subscribe, store } from '../store.js';
 import { navigate } from '../router.js';
 import { createDiffView } from '../diffview.js';
-import { push } from '../repoview.js';
+import { push, pull } from '../repoview.js';
 import { fileHistory, blame, gitignoreMenu } from '../fileviews.js';
+import { askCopilot, copilotOn } from '../copilot.js';
 
 const GROUPS = [
   ['conflicted', 'Merge conflicts'], ['staged', 'Staged changes'], ['unstaged', 'Changes'], ['untracked', 'Untracked'],
@@ -26,7 +27,7 @@ export function render(view, r) {
   const amend = h('input', { type: 'checkbox' });
   const signoff = h('input', { type: 'checkbox', checked: prefs.get('signoff', false) });
   const noVerify = h('input', { type: 'checkbox' });
-  const commitBtn = h('button', { class: 'btn primary grow', onclick: () => doCommit() }, icon('check'), 'Commit');
+  const commitBtn = h('button', { class: 'btn primary grow', onclick: () => { if (!commitBtn.dataset.busy) busyWhile(commitBtn, doCommit()); } }, icon('check'), 'Commit');
   const commitMore = h('button', { class: 'btn primary icon', title: 'More commit options', onclick: (e) => menuBelow(e.currentTarget, [
     { label: 'Commit and push', icon: 'push', action: () => doCommit({ then: 'push' }) },
     { label: 'Commit and sync (pull, then push)', icon: 'sync', action: () => doCommit({ then: 'sync' }) },
@@ -47,11 +48,29 @@ export function render(view, r) {
     hint.style.color = subj.length > 72 ? 'var(--warn)' : '';
   }
   updateHint();
+  const putMessage = (text) => { msg.value = text; prefs.set(msgKey, text); updateHint(); };
+  // Copilot writes the message for what Commit would commit. A draft in the box is passed along and can be brought back.
+  async function writeWithCopilot() {
+    const before = msg.value;
+    const holder = msg.placeholder;
+    const res = await askCopilot('ai.commitMessage', { id: r.id, draft: before }, 'the diff of the changes you are about to commit, and the subjects of this repository’s recent commits,', () => { msg.placeholder = 'Copilot is reading the changes…'; });
+    msg.placeholder = holder;
+    if (!res || disposed) return;
+    if (msg.value !== before) {
+      banner({ level: 'info', title: 'Copilot’s message is ready', body: 'You kept typing, so it was not put in the box.', timeout: 15000, actions: [{ label: 'Use it', action: () => putMessage(res.message) }] });
+      return;
+    }
+    putMessage(res.message);
+    banner({ level: 'success', title: 'Message written by Copilot', timeout: 7000,
+      body: [res.staged ? null : 'Nothing was staged, so it describes all changes.', res.cut ? 'The diff was long: Copilot saw the start of it and the full list of files.' : null].filter(Boolean).join(' ') || null,
+      actions: before.trim() ? [{ label: 'Undo', action: () => putMessage(before) }] : [] });
+  }
   const commitBox = h('div', { class: 'commitbox' }, msg, hint,
     h('div', { class: 'row wrap', style: { gap: '12px', fontSize: '12px' } },
       h('label', { class: 'check', title: 'Replace the last commit with a new one (only if not pushed)' }, amend, 'Amend'),
       h('label', { class: 'check', title: 'Add a Signed-off-by line' }, signoff, 'Sign-off'),
-      h('label', { class: 'check', title: 'Skip pre-commit and commit-msg hooks (git commit --no-verify)' }, noVerify, 'Skip hooks')),
+      h('label', { class: 'check', title: 'Skip pre-commit and commit-msg hooks (git commit --no-verify)' }, noVerify, 'Skip hooks'),
+      copilotOn() ? btn('Copilot', () => writeWithCopilot(), { cls: 'small ghost to-end', iconName: 'sparkle', title: 'Write the commit message with GitHub Copilot: from the staged changes, or from all changes when nothing is staged' }) : null),
     h('div', { class: 'btngroup', style: { display: 'flex' } }, commitBtn, commitMore));
 
   const listEl = h('div', { class: 'pane-scroll', tabindex: '0', title: 'Keys: ↑/↓ select, S stage/unstage, Delete discard, E open in editor' });
@@ -339,7 +358,7 @@ export function render(view, r) {
       wrap.append(fig);
       rpc('repo.image', { id: r.id, rev, file: path }).then((d) => {
         fig.firstChild.replaceWith(d.data ? h('img', { src: d.data, alt: label }) : h('div', { class: 'faint' }, d.svgText ? 'SVG (shown as text for safety)' : d.tooLarge ? 'Too large to preview' : 'Not present'));
-      });
+      }).catch(() => fig.firstChild.replaceWith(h('div', { class: 'faint' }, 'Could not load the image')));
     }
     return wrap;
   }
@@ -360,35 +379,57 @@ export function render(view, r) {
 
   async function renderOverview() {
     const s = r.summary || {};
-    const box = h('div', { class: 'page' });
-    mount(right, box);
-    const parts = [];
-    parts.push(h('div', { class: 'section-title' }, h('h2', null, s.branch ? `On ${s.branch}` : 'Detached HEAD')));
-    const facts = [];
-    if (s.upstream) facts.push(`Tracking ${s.upstream}${s.ahead || s.behind ? `: ${s.ahead} to push, ${s.behind} to pull` : ', up to date'}`);
-    else if (s.branch) facts.push('Not published yet. Use Publish to push it to origin.');
-    if (s.defaultBranch && s.branch !== s.defaultBranch && s.defaultRemoteRef) facts.push(`${s.aheadDefault || 0} ahead of / ${s.behindDefault || 0} behind ${s.defaultRemoteRef}`);
-    parts.push(h('div', { class: 'muted' }, facts.map((f) => h('div', null, f))));
+    const col = h('div', { class: 'overview' });
+    mount(right, h('div', { class: 'page' }, col));
+    const onDefault = !!s.branch && s.branch === s.defaultBranch;
+    // Where the branch stands against its remote copy, and the one or two things to do about it.
+    const state = [];
+    const actions = [];
+    if (!s.branch) state.push(h('span', null, 'Not on a branch. Create one to keep the commits you make here.'));
+    else if (!s.upstream) {
+      state.push(h('span', { class: 'badge warn' }, 'Not published'), h('span', null, 'Only on this computer so far.'));
+      actions.push(btn('Publish branch', () => push(r), { iconName: 'push' }));
+    } else {
+      if (!s.ahead && !s.behind) state.push(h('span', { class: 'badge ok' }, 'Up to date'));
+      if (s.ahead) state.push(h('span', { class: 'badge accent' }, `${s.ahead} to push`));
+      if (s.behind) state.push(h('span', { class: 'badge warn' }, `${s.behind} to pull`));
+      state.push(h('span', null, `Tracking ${s.upstream}`));
+      if (s.behind) actions.push(btn('Pull', () => pull(r), { iconName: 'pull' }));
+      if (s.ahead) actions.push(btn('Push', () => push(r), { iconName: 'push' }));
+    }
+    const stat = (n, word) => h('div', { class: `ov-stat${n ? '' : ' zero'}` }, h('b', null, String(n)), h('span', null, `${n === 1 ? 'commit' : 'commits'} ${word} ${s.defaultRemoteRef}`));
     const prBox = h('div');
     const unpushedBox = h('div');
     const backupsBox = h('div');
-    parts.push(prBox, unpushedBox, backupsBox);
-    mount(box, parts);
+    mount(col,
+      h('div', { class: 'panel' },
+        h('div', { class: 'ov-top' },
+          h('div', { class: 'ov-icon' }, icon(s.branch ? 'branch' : 'commit')),
+          h('div', { class: 'grow' }, h('h2', { class: 'ov-name' }, s.branch || 'Detached HEAD'), h('div', { class: 'ov-state' }, state)),
+          actions),
+        s.branch && !onDefault && s.defaultRemoteRef ? h('div', { class: 'ov-stats' }, stat(s.aheadDefault || 0, 'ahead of'), stat(s.behindDefault || 0, 'behind')) : null),
+      prBox, unpushedBox, backupsBox);
     // PR for the current branch (shortcut)
-    if (r.slug && r.slug.github && s.branch && s.branch !== s.defaultBranch) {
-      rpc('pr.forBranch', { id: r.id, branch: s.branch }).then((prs) => {
+    if (r.slug && r.slug.github && s.branch && !onDefault) {
+      const prTitle = h('div', { class: 'section-title' }, h('h3', null, 'Pull request'));
+      mount(prBox, prTitle, h('div', { class: 'panel ov-row faint' }, 'Looking for a pull request…'));
+      // The base comes from the user's base branch settings; if that cannot be worked out, the sentence goes without a name.
+      Promise.all([rpc('pr.forBranch', { id: r.id, branch: s.branch }), rpc('pr.base', { id: r.id, branch: s.branch }).catch(() => null)]).then(([prs, pick]) => {
         if (disposed) return;
         const p = prs[0];
-        mount(prBox, h('div', { class: 'section-title' }, h('h3', null, 'Pull request for this branch')),
+        const into = (pick && pick.base !== s.branch && pick.base) || '';
+        mount(prBox, prTitle,
           p ? h('div', { class: 'panel list-row', onclick: () => navigate(`#/repo/${r.id}/prs/${p.number}`) },
             icon('pr'), h('div', { class: 'grow' }, h('div', { class: 't' }, `#${p.number} ${p.title}`), h('div', { class: 'sub' }, `${p.state.toLowerCase()}${p.isDraft ? ' · draft' : ''} · ${p.baseRefName} ← ${p.headRefName}`)),
-            p.checks ? h('span', { class: `badge ${p.checks === 'success' ? 'ok' : p.checks === 'failure' ? 'bad' : 'run'}` }, `checks ${p.checks}`) : null)
-            : h('div', { class: 'row' }, h('span', { class: 'muted' }, 'No pull request yet.'), btn('Create pull request', () => navigate(`#/repo/${r.id}/prs/new`), { cls: 'primary small', iconName: 'pr' })));
-      }).catch(() => {});
+            checksBadge(p.checks))
+            : h('div', { class: 'panel ov-row' }, icon('pr', 'muted'),
+              h('div', { class: 'grow' }, h('div', { class: 't' }, 'No pull request yet'), h('div', { class: 'sub' }, `Open one to merge this branch${into ? ` into ${into}` : ''}.${s.upstream ? '' : ' The branch is published first.'}`)),
+              btn('Create pull request', () => navigate(`#/repo/${r.id}/prs/new`), { cls: 'primary', iconName: 'pr' })));
+      }).catch(() => { if (!disposed) mount(prBox); });
     }
     rpc('repo.unpushedLog', { id: r.id }).then((log) => {
       if (disposed || !log.length) return;
-      mount(unpushedBox, h('div', { class: 'section-title' }, h('h3', null, `Unpushed commits (${log.length})`), h('span', { class: 'spacer' }), btn(s.upstream ? 'Push' : 'Publish', () => push(r), { cls: 'small', iconName: 'push' })),
+      mount(unpushedBox, h('div', { class: 'section-title' }, h('h3', null, `Unpushed commits (${log.length})`)),
         h('div', { class: 'panel' }, log.map((c) => h('div', { class: 'list-row', onclick: () => navigate(`#/repo/${r.id}/graph/${c.hash}`) }, h('span', { class: 'mono muted' }, c.hash.slice(0, 8)), h('span', { class: 'grow ellipsis' }, c.subject), h('span', { class: 'faint' }, ago(c.commitTime))))));
     }).catch(() => {});
     rpc('repo.backups', { id: r.id }).then((list) => {

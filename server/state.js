@@ -106,8 +106,9 @@ function slugOf(id) {
 // ---------- refresh ----------
 
 const inflight = new Map();
+const again = new Set(); // asked for while a read was already running: that read may predate the change, so read once more
 async function refresh(id) {
-  if (inflight.has(id)) return inflight.get(id);
+  if (inflight.has(id)) { again.add(id); return inflight.get(id); }
   const r = repos.get(id);
   if (!r) return null;
   const p = (async () => {
@@ -125,7 +126,7 @@ async function refresh(id) {
     return summaries.get(id);
   })();
   inflight.set(id, p);
-  try { return await p; } finally { inflight.delete(id); }
+  try { return await p; } finally { inflight.delete(id); if (again.delete(id)) refresh(id).catch(() => {}); }
 }
 
 async function refreshAll() {
@@ -157,8 +158,9 @@ function unwatch(id) { const w = watchers.get(id); if (w) { try { w.close(); } c
 function boardFor(s) { return board[`${s.owner}/${s.repo}`.toLowerCase()] || null; }
 
 let boardRunning = null;
+let boardAgain = false; // asked for while a poll was out: GitHub may have changed since that poll asked
 async function pollBoard() {
-  if (boardRunning) return boardRunning;
+  if (boardRunning) { boardAgain = true; return boardRunning; }
   boardRunning = (async () => {
     const targets = [];
     const seen = new Set();
@@ -189,7 +191,10 @@ async function pollBoard() {
     bus.emit('board', { board, at: boardAt });
     saveCacheSoon();
   })();
-  try { return await boardRunning; } catch (e) { log.warn('Board poll failed', { error: e.message }); } finally { boardRunning = null; }
+  try { return await boardRunning; } catch (e) { log.warn('Board poll failed', { error: e.message }); } finally {
+    boardRunning = null;
+    if (boardAgain) { boardAgain = false; pollBoard(); }
+  }
 }
 
 function detectExternalPushes(prev, next) {
@@ -264,9 +269,12 @@ let trackersRunning = false;
 async function pollTrackers() {
   if (trackersRunning) return;
   trackersRunning = true;
+  let active = [];
+  const was = new Map();
   try {
     const mine = config.get().currentAccount || '';
-    const active = trackers.filter((t) => (t.state === 'waiting' || t.state === 'running') && (t.account || '') === mine);
+    active = trackers.filter((t) => (t.state === 'waiting' || t.state === 'running') && (t.account || '') === mine);
+    for (const t of active) was.set(t.id, t.state);
     await queue.pool(active, 4, async (t) => {
       let runs;
       if (t.runId) runs = [await gh.runView(t.slug, t.runId)].filter(Boolean);
@@ -296,6 +304,8 @@ async function pollTrackers() {
     trackersRunning = false;
     saveTrackers();
     bus.emit('trackers', visibleTrackers());
+    // A run that started or finished also changes the dots and counts that come from the board.
+    if (active.some((t) => t.state !== was.get(t.id))) pollBoard();
   }
 }
 let soon = null;
@@ -321,7 +331,8 @@ function announce(t) {
 let prState = readJson(statePath(), {}).prs || null;
 async function pollMyPrs() {
   const cfg = config.get();
-  if (!cfg.notifications || !cfg.notifyReviewRequests) return;
+  // The lists are shown in the app whatever the notification settings say; those only decide what is announced.
+  const announceThem = cfg.notifications && cfg.notifyReviewRequests;
   try {
     const login = cfg.currentAccount;
     if (!login) { prState = null; bus.emit('myprs', { review: [], mine: [] }); return; }
@@ -331,7 +342,7 @@ async function pollMyPrs() {
     for (const p of d.review) next.review[`${p.repo}#${p.number}`] = p;
     for (const p of d.mine) next.mine[`${p.repo}#${p.number}`] = p;
     if (prState && prState.account !== login) prState = null; // the first poll after a switch never notifies
-    if (prState) {
+    if (prState && announceThem) {
       for (const [k, p] of Object.entries(next.review)) {
         if (!prState.review[k]) emitAndToast({ level: 'info', title: `Review requested: ${p.repo}#${p.number}`, body: `${p.title} (by ${p.author})`, url: p.url });
       }

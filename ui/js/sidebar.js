@@ -29,7 +29,7 @@ export function initSidebar(root) {
     h('div', { class: 'row', style: { gap: '4px' } }, input,
       iconBtn('star', 'Save the current filter', () => saveFilter()),
       iconBtn('fetch', 'Fetch all repositories', () => fetchAll()),
-      iconBtn('refresh', 'Rescan folders and refresh status', () => act(() => rpc('repos.scan'))),
+      iconBtn('refresh', 'Rescan folders and refresh status', () => act(() => rpc('repos.scan'), { ok: 'Scan finished' })),
       iconBtn('plus', 'Clone or add repositories', () => import('./onboarding.js').then((m) => m.cloneDialog()))),
     segEl, savedEl);
   treeEl = h('div', { class: 'tree', role: 'tree' });
@@ -267,9 +267,9 @@ function repoRow(r, depth, hasKids, dim) {
   if (s.inProgress && s.inProgress.length) meta.push(h('span', { class: 'badge bad', title: `${s.inProgress.join(', ')} in progress` }, s.inProgress[0]));
   if (s.locked) meta.push(h('span', { class: 'badge bad', title: 'index.lock exists: another git process is running or crashed' }, 'locked'));
   if (s.dirty) meta.push(h('span', { class: 'badge warn', title: `${s.counts.staged} staged, ${s.counts.unstaged} changed, ${s.counts.untracked} untracked${s.counts.conflicted ? `, ${s.counts.conflicted} conflicted` : ''}` }, s.dirty));
-  if (s.ahead) meta.push(h('span', { class: 'badge info', title: `${s.ahead} commit(s) to push` }, `↑${s.ahead}`));
-  if (!s.upstream && s.unpushed) meta.push(h('span', { class: 'badge info', title: `${s.unpushed} commit(s) on a branch that is not published` }, `↑${s.unpushed}`));
-  if (s.behind) meta.push(h('span', { class: 'badge warn', title: `${s.behind} commit(s) to pull` }, `↓${s.behind}`));
+  if (s.ahead) meta.push(h('span', { class: 'badge info', title: `${plural(s.ahead, 'commit')} to push` }, `↑${s.ahead}`));
+  if (!s.upstream && s.unpushed) meta.push(h('span', { class: 'badge info', title: `${plural(s.unpushed, 'commit')} on a branch that is not published` }, `↑${s.unpushed}`));
+  if (s.behind) meta.push(h('span', { class: 'badge warn', title: `${plural(s.behind, 'commit')} to pull` }, `↓${s.behind}`));
   const mine = myPrCount(r);
   const open = b && !b.error && b.openPrs != null ? b.openPrs : mine;
   if (open) meta.push(h('span', { class: `badge ${mine ? 'accent' : ''}`, title: `${open} open pull request${open === 1 ? '' : 's'}${mine ? `, ${mine} by you` : ''}` }, icon('pr', 'sm'), open));

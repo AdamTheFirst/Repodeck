@@ -24,8 +24,11 @@ export function subscribe(topic, fn) {
 }
 
 export function setRepos(list) {
-  store.repos = list;
-  store.byId = new Map(list.map((r) => [r.id, r]));
+  // A repository keeps its object across lists. The open page holds on to it, and with a new object
+  // per list it went on showing the state from before the last scan until the next click.
+  const repos = list.map((n) => { const old = store.byId.get(n.id); return old ? Object.assign(old, n) : n; });
+  store.repos = repos;
+  store.byId = new Map(repos.map((r) => [r.id, r]));
   emit('repos');
 }
 export function updateSummary(id, summary, busy) {

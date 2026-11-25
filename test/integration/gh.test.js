@@ -157,3 +157,15 @@ test('check rollup and check normalisation', () => {
   const c = gh.normalizeCheck({ name: 'build', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'https://github.com/acme/a/actions/runs/42/job/99' });
   assert.deepEqual([c.runId, c.jobId, c.conclusion], ['42', '99', 'failure']);
 });
+
+test('a branch is looked up by name, slashes kept, and anything but a clear yes counts as missing', async () => {
+  calls.length = 0;
+  handler = (args) => {
+    if (args[0] === 'auth') return { stdout: ACCOUNTS };
+    return args[1].endsWith('/branches/release/2026%231') ? { stdout: 'release/2026#1' } : notFound();
+  };
+  assert.equal(await gh.branchExists({ owner: 'acme', repo: 'a' }, 'release/2026#1'), true);
+  assert.equal(await gh.branchExists({ owner: 'acme', repo: 'a' }, 'develop'), false);
+  const api = calls.filter((c) => c.args[0] === 'api').map((c) => c.args[1]);
+  assert.deepEqual(api, ['repos/acme/a/branches/release/2026%231', 'repos/acme/a/branches/develop']);
+});

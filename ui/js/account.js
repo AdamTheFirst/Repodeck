@@ -49,14 +49,14 @@ async function openPanel(anchor) {
             e.stopPropagation();
             menuBelow(e.currentTarget, [
               { label: 'Open profile on GitHub', icon: 'external', action: () => rpc('open.url', { url: `https://github.com/${a.login}` }) },
-              { label: 'Also use for gh in the terminal', icon: 'terminal', disabled: a.active, action: () => act(() => rpc('account.makeDefault', { login: a.login }), { ok: `${a.login} is now the default for gh in terminals` }).then(loadAccounts) },
+              { label: 'Make default in terminal', icon: 'terminal', disabled: a.active, action: () => act(() => rpc('account.makeDefault', { login: a.login }), { ok: `${a.login} is now the default for gh in terminals` }).then(loadAccounts) },
               a.state !== 'success' ? { label: 'Sign in again', icon: 'refresh', action: () => { close(); signIn(); } } : null,
               '-',
               { label: `Sign out ${a.login}`, icon: 'x', danger: true, action: () => { close(); signOut(a.login); } },
             ]);
           }, { cls: 'small icon ghost', iconName: 'more', title: 'More' })))),
       h('div', { class: 'row', style: { marginTop: '6px' } }, btn('Add another account', () => { close(); signIn(); }, { cls: 'small', iconName: 'plus' }))),
-    h('div', { class: 'ap-section' }, h('div', { class: 'ap-title' }, 'Commits are signed as'),
+    h('div', { class: 'ap-section' }, h('div', { class: 'ap-title' }, 'Commit identity'),
       identity && (identity.name || identity.email)
         ? h('div', { class: 'row' }, h('div', { class: 'grow', style: { minWidth: 0 } }, h('div', { class: 'ellipsis' }, identity.name || h('span', { class: 'faint' }, 'no name')), h('div', { class: 'sub ellipsis' }, identity.email || 'no email')),
           btn('Change', () => { close(); editIdentity(); }, { cls: 'small' }))

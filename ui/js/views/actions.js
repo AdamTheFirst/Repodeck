@@ -1,5 +1,5 @@
 // Per-repository GitHub Actions: runs, run detail with jobs/steps/logs, re-run, cancel, dispatch, deployments.
-import { h, mount, icon, btn, iconBtn, act, form, banner, ago, duration, statusBadge, runDot, confirmDanger, copyText, debounce } from '../dom.js';
+import { h, mount, icon, btn, iconBtn, act, form, banner, ago, duration, statusBadge, runDot, confirmDanger, copyText, debounce, plural } from '../dom.js';
 import { rpc } from '../api.js';
 import { store, subscribe, boardFor } from '../store.js';
 import { navigate } from '../router.js';
@@ -27,33 +27,37 @@ function runList(view, r) {
       branchIn,
       h('select', { onchange: (e) => { f.status = e.target.value; load(); } }, [['', 'Any status'], ['failure', 'Failed'], ['in_progress', 'In progress'], ['queued', 'Queued'], ['success', 'Succeeded'], ['cancelled', 'Cancelled']].map(([v, l]) => h('option', { value: v, selected: f.status === v }, l))),
       h('span', { class: 'spacer' }),
-      iconBtn('refresh', 'Refresh', () => load()),
+      iconBtn('refresh', 'Refresh', () => { loadEnv(); return load(); }, 'small'),
       btn('Run workflow…', () => dispatchDialog(r, workflows), { cls: 'small', iconName: 'play' }),
       btn('Actions on GitHub', () => rpc('open.url', { url: `https://github.com/${r.slug.owner}/${r.slug.repo}/actions` }), { cls: 'small', iconName: 'external' }));
+  }
+  // Environments are asked for when the tab opens and on Refresh, and their panel is kept across redraws of
+  // the head: asked on every board update, the panel blinked and pushed the run list down each time.
+  const envBox = h('div');
+  function loadEnv() {
+    rpc('deploy.list', { id: r.id }).then((d) => {
+      mount(envBox, d.latest.length ? h('div', { class: 'panel', style: { marginBottom: '12px' } }, h('div', { class: 'panel-head' }, h('h3', null, 'Environments')),
+        d.latest.map((dep) => h('div', { class: 'run-row', onclick: () => dep.latestStatus && dep.latestStatus.logUrl && rpc('open.url', { url: dep.latestStatus.logUrl }) },
+          h('span', { class: `badge ${(dep.latestStatus || {}).state === 'SUCCESS' ? 'ok' : ['FAILURE', 'ERROR'].includes((dep.latestStatus || {}).state) ? 'bad' : 'run'}` }, ((dep.latestStatus || {}).state || dep.state || '').toLowerCase()),
+          h('strong', null, dep.environment), h('span', { class: 'muted grow' }, `${dep.ref ? dep.ref.name : ''} @ ${(dep.commitOid || '').slice(0, 8)}`),
+          dep.latestStatus && dep.latestStatus.environmentUrl ? h('a', { onclick: (e) => { e.stopPropagation(); rpc('open.url', { url: dep.latestStatus.environmentUrl }); } }, 'open site') : null,
+          h('span', { class: 'faint' }, ago((dep.latestStatus || dep).createdAt))))) : null);
+    }).catch(() => {});
   }
   function renderHead() {
     const b = boardFor(r);
     const trackers = store.trackers.filter((t) => t.repoId === r.id && (t.state === 'waiting' || t.state === 'running'));
-    const envBox = h('div');
     mount(head, h('div', { class: 'page', style: { paddingBottom: 0 } },
-      trackers.length ? h('div', { class: 'info-box', style: { marginBottom: '10px' } }, `Tracking ${trackers.length} run set(s) started from this app. `, h('a', { onclick: () => navigate('#/board') }, 'Open the Actions board')) : null,
+      trackers.length ? h('div', { class: 'info-box', style: { marginBottom: '10px' } }, `Tracking ${plural(trackers.length, 'run set')} started from this app. `, h('a', { onclick: () => navigate('#/board') }, 'Open the Actions board')) : null,
       b && !b.error ? h('div', { class: 'panel', style: { marginBottom: '12px' } },
         h('div', { class: 'panel-head' }, h('h3', { class: 'grow' }, `Latest on ${b.branch}`), h('span', { class: 'muted ellipsis', style: { maxWidth: '50%' } }, `${(b.oid || '').slice(0, 8)} ${b.headline || ''}`), h('span', { class: 'faint' }, b.committedDate ? ago(b.committedDate) : '')),
         b.runs.length ? b.runs.map((x) => h('div', { class: 'run-row', onclick: () => navigate(`#/repo/${r.id}/actions/run/${x.id}`) }, statusBadge(x.status, x.conclusion), h('span', { class: 'grow' }, x.workflow), h('span', { class: 'faint' }, x.status === 'completed' ? duration(x.createdAt, x.updatedAt) : `running ${duration(x.createdAt)}`)))
           : h('div', { class: 'panel-body muted' }, 'No workflow runs for the latest commit.')) : b && b.error ? h('div', { class: 'warn-box', style: { marginBottom: '12px' } }, b.error.split('\n')[0]) : null,
       envBox));
-    rpc('deploy.list', { id: r.id }).then((d) => {
-      if (!d.latest.length) return;
-      mount(envBox, h('div', { class: 'panel', style: { marginBottom: '12px' } }, h('div', { class: 'panel-head' }, h('h3', null, 'Environments')),
-        d.latest.map((dep) => h('div', { class: 'run-row', onclick: () => dep.latestStatus && dep.latestStatus.logUrl && rpc('open.url', { url: dep.latestStatus.logUrl }) },
-          h('span', { class: `badge ${(dep.latestStatus || {}).state === 'SUCCESS' ? 'ok' : ['FAILURE', 'ERROR'].includes((dep.latestStatus || {}).state) ? 'bad' : 'run'}` }, ((dep.latestStatus || {}).state || dep.state || '').toLowerCase()),
-          h('strong', null, dep.environment), h('span', { class: 'muted grow' }, `${dep.ref ? dep.ref.name : ''} @ ${(dep.commitOid || '').slice(0, 8)}`),
-          dep.latestStatus && dep.latestStatus.environmentUrl ? h('a', { onclick: (e) => { e.stopPropagation(); rpc('open.url', { url: dep.latestStatus.environmentUrl }); } }, 'open site') : null,
-          h('span', { class: 'faint' }, ago((dep.latestStatus || dep).createdAt))))));
-    }).catch(() => {});
   }
-  async function load() {
-    mount(body, h('div', { class: 'progress' }));
+  /** quiet: the half-minute refresh. The list stays on screen and keeps its place until the new one is here. */
+  async function load(quiet) {
+    if (!quiet) mount(body, h('div', { class: 'progress' }), h('div', { class: 'skeleton' }, 'Loading…'));
     try {
       const runs = await rpc('run.list', { id: r.id, workflow: f.workflow || undefined, branch: f.branch || undefined, status: f.status || undefined, limit: 50 });
       mount(body, h('div', { class: 'page', style: { paddingTop: 0 } }, h('h3', { style: { margin: '6px 0 8px' } }, 'Recent runs'),
@@ -66,9 +70,16 @@ function runList(view, r) {
     } catch (e) { mount(body, h('div', { class: 'errbox', style: { margin: '12px' } }, e.message)); }
   }
   rpc('workflow.list', { id: r.id }).then((w) => { workflows = w; renderBar(); }).catch(() => {});
-  renderBar(); renderHead(); load();
-  const unsub = [subscribe('board', renderHead), subscribe('trackers', renderHead)];
-  const timer = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 30_000);
+  renderBar(); renderHead(); loadEnv(); load();
+  // A run the app starts or follows (Run workflow, a push, a merge) shows up in the list at once, not at the next half minute.
+  let followed = store.trackers.filter((t) => t.repoId === r.id).map((t) => `${t.id}:${t.state}`).join();
+  const onTrackers = () => {
+    renderHead();
+    const now = store.trackers.filter((t) => t.repoId === r.id).map((t) => `${t.id}:${t.state}`).join();
+    if (now !== followed) { followed = now; load(true); }
+  };
+  const unsub = [subscribe('board', renderHead), subscribe('trackers', onTrackers)];
+  const timer = setInterval(() => { if (document.visibilityState === 'visible') load(true); }, 30_000);
   return { dispose() { unsub.forEach((u) => u()); clearInterval(timer); } };
 }
 
@@ -105,9 +116,11 @@ function runDetail(view, r, runId) {
   const logBar = h('div', { class: 'diff-toolbar' });
   const logEl = h('div', { class: 'log' });
   mount(view, h('div', { class: 'pane', style: { flex: 1 } }, head, h('div', { class: 'split' }, jobsEl, h('div', { class: 'right' }, logBar, logEl))));
+  mount(head, iconBtn('back', 'Back to runs', () => navigate(`#/repo/${r.id}/actions`)), h('span', { class: 'title' }, `Run ${runId}`));
+  mount(jobsEl, h('div', { class: 'skeleton' }, 'Loading…'));
 
   async function load() {
-    try { run = await rpc('run.view', { id: r.id, runId }); } catch (e) { mount(logEl, e.message); return; }
+    try { run = await rpc('run.view', { id: r.id, runId }); } catch (e) { if (!disposed) { mount(jobsEl); mount(logEl, h('div', { class: 'errbox', style: { margin: '12px' } }, e.message)); } return; }
     if (disposed) return;
     const failed = ['failure', 'timed_out', 'cancelled', 'startup_failure'].includes(run.conclusion);
     const tracked = store.trackers.some((t) => (t.runId === runId || t.runs.some((x) => x.id === runId)) && t.state !== 'done');
@@ -120,7 +133,7 @@ function runDetail(view, r, runId) {
       run.status !== 'completed' ? btn('Cancel run', async () => { if (await confirmDanger({ title: 'Cancel run?', message: 'Stops the run. Jobs already finished keep their results.', confirmLabel: 'Cancel run' })) act(() => rpc('run.cancel', { id: r.id, runId }), { ok: 'Cancel requested' }).then(load); }, { cls: 'small danger' }) : null,
       run.status === 'completed' && failed ? btn('Re-run failed jobs', () => act(() => rpc('run.rerun', { id: r.id, runId, failed: true, title: run.workflowName }), { ok: 'Re-running failed jobs' }).then(load), { cls: 'small primary' }) : null,
       run.status === 'completed' ? btn('Re-run all', () => act(() => rpc('run.rerun', { id: r.id, runId, title: run.workflowName }), { ok: 'Re-running all jobs' }).then(load), { cls: 'small' }) : null,
-      btn('GitHub', () => rpc('open.url', { url: run.url }), { cls: 'small', iconName: 'external' }));
+      btn('Open on GitHub', () => rpc('open.url', { url: run.url }), { cls: 'small', iconName: 'external' }));
     const jobs = run.jobs || [];
     if (!selectedJob) { const fj = jobs.find((j) => ['failure', 'timed_out', 'cancelled'].includes(j.conclusion)) || jobs[0]; selectedJob = fj ? fj.databaseId : null; }
     mount(jobsEl, jobs.length ? jobs.map((j) => h('div', null,
@@ -167,7 +180,7 @@ function runDetail(view, r, runId) {
         prev = k;
       }
       const failedStep = (job.steps || []).find((st) => st.conclusion === 'failure');
-      frag.append(h('div', { class: 'fail-box' }, h('div', { class: 'fb-head' }, 'What failed', h('span', { class: 'spacer' }), h('span', { style: { fontWeight: 400 } }, failedStep ? failedStep.name : `${errIdx.length} error line(s)`)), bodyEl),
+      frag.append(h('div', { class: 'fail-box' }, h('div', { class: 'fb-head' }, 'What failed', h('span', { class: 'spacer' }), h('span', { style: { fontWeight: 400 } }, failedStep ? failedStep.name : `${plural(errIdx.length, 'error line')}`)), bodyEl),
         h('div', { class: 'eyebrow', style: { padding: '0 16px 6px', fontFamily: 'var(--font)' } }, `Full log · ${lines.length} lines`));
     }
     let step = null;
@@ -179,7 +192,7 @@ function runDetail(view, r, runId) {
     }
     logEl.textContent = '';
     logEl.append(frag);
-    mount(logBar, h('strong', null, job.name), errIdx.length ? h('span', { class: 'badge bad' }, `${errIdx.length} error line(s)`) : null, h('span', { class: 'spacer' }),
+    mount(logBar, h('strong', null, job.name), errIdx.length ? h('span', { class: 'badge bad' }, `${plural(errIdx.length, 'error line')}`) : null, h('span', { class: 'spacer' }),
       btn('Copy log', () => copyText(text), { cls: 'small', iconName: 'copy' }),
       btn('Save log…', () => { const a = h('a', { download: `${run.workflowName}-${job.name}-${runId}.log`.replace(/[^\w.-]+/g, '_') }); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' })); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }, { cls: 'small' }),
       btn('Open on GitHub', () => rpc('open.url', { url: job.url }), { cls: 'small', iconName: 'external' }));

@@ -1,6 +1,6 @@
 // Feature branches across repositories: find every repo with a branch, see its state, PRs and
 // checks, and act on all of them at once (switch, pull, push, update, create PRs, merge PRs in order).
-import { h, mount, icon, btn, act, modal, form, confirmDanger, banner, plural, iconBtn } from '../dom.js';
+import { h, mount, icon, btn, act, modal, form, confirmDanger, banner, plural, iconBtn, checksBadge } from '../dom.js';
 import { rpc } from '../api.js';
 import { store, prefs } from '../store.js';
 import { navigate } from '../router.js';
@@ -18,11 +18,12 @@ export function render(main, parts) {
   const table = h('div');
 
   let suggestions = [];
+  if (!branch) mount(table, h('div', { class: 'skeleton' }, 'Looking for branches…'));
   rpc('feature.branches').then((list) => {
     suggestions = list;
-    mount(datalist, list.map((b) => h('option', { value: b.name }, `${b.count} repositories`)));
+    mount(datalist, list.map((b) => h('option', { value: b.name }, plural(b.count, 'repository'))));
     if (!branch) landing();
-  }).catch(() => {});
+  }).catch((e) => { if (!branch) mount(table, h('div', { class: 'errbox' }, e.message)); });
   function landing() {
     const multi = suggestions.filter((b) => b.count > 1);
     const rest = suggestions.filter((b) => b.count === 1).slice(0, 30);
@@ -50,16 +51,16 @@ export function render(main, parts) {
     mount(table,
       rows.length ? [
         h('div', { class: 'row wrap', style: { margin: '6px 0 10px' } },
-          h('strong', null, `${rows.length} repositories have ${branch}`), h('span', { class: 'muted' }, `${chosen.length} selected`), h('span', { class: 'spacer' }),
+          h('strong', null, `${plural(rows.length, 'repository')} ${rows.length === 1 ? 'has' : 'have'} ${branch}`), h('span', { class: 'muted' }, `${chosen.length} selected`), h('span', { class: 'spacer' }),
           btn('Switch to branch', () => bulk('switch', 'Switch to branch'), { cls: 'small', iconName: 'branch' }),
           btn('Pull', () => bulk('pull', 'Pull'), { cls: 'small', iconName: 'pull' }),
           btn('Push', () => bulk('push', 'Push'), { cls: 'small', iconName: 'push' }),
           btn('Update from default', () => bulk('updateFromDefault', `Update from default (${store.config.updateFromDefault})`), { cls: 'small', iconName: 'merge' }),
           btn('Back to default branch', () => bulk('returnDefault', 'Return to default branch', { pull: true }), { cls: 'small' }),
           btn('Create PRs…', () => createPrs(), { cls: 'small primary', iconName: 'pr' }),
-          btn(`Merge ${prs.length} PRs…`, () => mergePrs(prs), { cls: 'small primary', iconName: 'merge', disabled: !prs.length }),
+          btn(prs.length ? `Merge ${plural(prs.length, 'PR')}…` : 'Merge PRs…', () => mergePrs(prs), { cls: 'small primary', iconName: 'merge', disabled: !prs.length, title: prs.length ? '' : 'None of the selected repositories has an open pull request for this branch' }),
           btn('Delete branch…', () => bulk('deleteBranch', 'Delete local branch'), { cls: 'small danger' }),
-          iconBtn('refresh', 'Refresh', () => find())),
+          iconBtn('refresh', 'Refresh', () => find(), 'small')),
         h('table', { class: 'grid panel' },
           h('tr', null, h('th', { style: { width: '32px' } }, h('input', { type: 'checkbox', checked: sel.size === rows.length, onchange: (e) => { rows.forEach((x) => (e.target.checked ? sel.add(x.id) : sel.delete(x.id))); draw(); } })),
             h('th', null, 'Repository'), h('th', null, 'Where'), h('th', null, 'Local vs remote'), h('th', null, 'vs default'), h('th', null, 'Working tree'), h('th', null, 'Pull request'), h('th', null, 'Checks')),
@@ -73,7 +74,7 @@ export function render(main, parts) {
             h('td', null, x.pr ? h('a', { onclick: () => navigate(`#/repo/${x.id}/prs/${x.pr.number}`) }, `#${x.pr.number} `, h('span', { class: `badge ${x.pr.state === 'MERGED' ? 'accent' : x.pr.state === 'OPEN' ? (x.pr.isDraft ? '' : 'ok') : ''}` }, x.pr.isDraft && x.pr.state === 'OPEN' ? 'draft' : x.pr.state.toLowerCase()),
               x.pr.reviewDecision ? h('span', { class: `badge ${x.pr.reviewDecision === 'APPROVED' ? 'ok' : x.pr.reviewDecision === 'CHANGES_REQUESTED' ? 'bad' : ''}`, style: { marginLeft: '4px' } }, x.pr.reviewDecision.toLowerCase().replace(/_/g, ' ')) : null)
               : x.prError ? h('span', { class: 'faint', title: x.prError }, 'unavailable') : h('span', { class: 'faint' }, 'none')),
-            h('td', null, x.pr && x.pr.checks ? h('a', { onclick: () => navigate(`#/repo/${x.id}/prs/${x.pr.number}`) }, h('span', { class: `badge ${x.pr.checks === 'success' ? 'ok' : x.pr.checks === 'failure' ? 'bad' : 'run'}` }, x.pr.checks)) : '')))),
+            h('td', null, x.pr && x.pr.checks ? h('a', { onclick: () => navigate(`#/repo/${x.id}/prs/${x.pr.number}`) }, checksBadge(x.pr.checks, true)) : '')))),
       ] : branch ? h('div', { class: 'empty' }, `No repository has a branch named "${branch}" (local or as of the last fetch).`) : null);
   }
 
@@ -87,7 +88,7 @@ export function render(main, parts) {
     if (!without.length) { banner({ level: 'info', title: 'Every selected repository already has an open pull request for this branch', timeout: 4000 }); return; }
     const v = await form({
       title: `Create pull requests for ${branch}`, wide: true,
-      intro: h('div', { class: 'col' }, h('div', { class: 'muted' }, `One pull request per repository, each into that repository's default branch. Branches that are not pushed yet are pushed first.`),
+      intro: h('div', { class: 'col' }, h('div', { class: 'muted' }, `One pull request per repository, each into ${store.config.prBase || Object.keys(store.config.prBaseByRepo || {}).length ? 'the base branch set for it in Settings where that branch exists, otherwise its default branch' : 'that repository’s default branch'}. Branches that are not pushed yet are pushed first.`),
         h('div', { class: 'mono', style: { fontSize: '12px' } }, without.map((x) => x.label).join(', '))),
       fields: [
         { name: 'title', label: 'Title (same for all)', required: true, value: branch.replace(/^[^/]+\//, '').replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase()) },
@@ -95,14 +96,14 @@ export function render(main, parts) {
         { name: 'draft', label: 'Create as drafts', type: 'checkbox' },
         { name: 'crossLink', label: 'Add links between the pull requests to each description', type: 'checkbox', value: true },
       ],
-      submit: `Create ${without.length} pull request(s)`,
+      submit: `Create ${plural(without.length, 'pull request')}`,
     });
     if (!v) return;
     banner({ level: 'info', title: `Creating ${without.length} pull requests…`, timeout: 3000 });
     const res = await act(() => rpc('feature.createPrs', { ids: without.map((x) => x.id), branch, title: v.title, body: v.body, draft: v.draft, crossLink: v.crossLink }));
     if (!res) return;
     modal({ title: 'Pull requests', wide: true, body: h('table', { class: 'grid' }, h('tr', null, h('th', null, 'Repository'), h('th', null, 'Result')),
-      res.map((x) => h('tr', null, h('td', null, x.label), h('td', null, x.status === 'ok' ? h('a', { onclick: () => rpc('open.url', { url: x.url }) }, `#${x.number}`) : h('span', { style: { color: 'var(--bad)' } }, x.message), x.status === 'ok' && x.message ? h('div', { class: 'faint' }, x.message) : null)))),
+      res.map((x) => h('tr', null, h('td', null, x.label), h('td', null, x.status === 'ok' ? [h('a', { onclick: () => rpc('open.url', { url: x.url }) }, `#${x.number}`), x.base ? h('span', { class: 'muted' }, ` into ${x.base}`) : null] : h('span', { style: { color: 'var(--bad)' } }, x.message), x.status === 'ok' && x.message ? h('div', { class: 'faint' }, x.message) : null)))),
     actions: [{ label: 'Close', cls: 'primary', default: true, value: null }] });
     find();
   }
@@ -114,7 +115,7 @@ export function render(main, parts) {
     const listEl = h('div', { class: 'panel' });
     const drawOrder = () => mount(listEl, order.map((x, i) => h('div', { class: 'list-row' },
       h('strong', null, `${i + 1}.`), h('span', { class: 'grow' }, `${x.label} #${x.pr.number}`),
-      x.pr.checks ? h('span', { class: `badge ${x.pr.checks === 'success' ? 'ok' : x.pr.checks === 'failure' ? 'bad' : 'run'}` }, `checks ${x.pr.checks}`) : null,
+      checksBadge(x.pr.checks),
       x.pr.reviewDecision ? h('span', { class: 'badge' }, x.pr.reviewDecision.toLowerCase().replace(/_/g, ' ')) : null,
       iconBtn('chevronDown', 'Move down', () => { if (i < order.length - 1) { [order[i], order[i + 1]] = [order[i + 1], order[i]]; drawOrder(); } }),
       i > 0 ? h('button', { class: 'btn icon ghost small', title: 'Move up', onclick: () => { [order[i], order[i - 1]] = [order[i - 1], order[i]]; drawOrder(); } }, '↑') : null)));

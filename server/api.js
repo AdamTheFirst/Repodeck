@@ -11,8 +11,10 @@ const unreachable = require('./unreachable');
 const gh = require('./gh');
 const P = require('./parse');
 const queue = require('./queue');
+const prbase = require('./prbase');
+const copilot = require('./copilot');
 const log = require('./log');
-const { run } = require('./proc');
+const { run, which } = require('./proc');
 const { paths, writeJsonAtomic, readJson } = require('./paths');
 
 const repo = (p) => state.get(p.id);
@@ -59,20 +61,6 @@ function openExternal(url) {
   spawn('rundll32.exe', ['url.dll,FileProtocolHandler', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 }
 
-/** Find a program on PATH, honouring PATHEXT (so "code" finds code.cmd). */
-function which(cmd) {
-  if (path.isAbsolute(cmd)) return fs.existsSync(cmd) ? cmd : null;
-  const exts = process.platform === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD;.BAT;.COM').split(';')] : [''];
-  for (const dir of (process.env.PATH || '').split(path.delimiter)) {
-    if (!dir) continue;
-    for (const ext of exts) {
-      const f = path.join(dir, cmd + ext.toLowerCase());
-      try { if (fs.statSync(f).isFile()) return f; } catch {}
-    }
-  }
-  return null;
-}
-
 function launch(cmd, args, dir) {
   let a = (args || []).map((x) => String(x).split('{path}').join(dir));
   let program = which(cmd) || cmd;
@@ -105,9 +93,37 @@ async function afterPush(r, res, reason) {
   } catch (e) { log.warn('Could not start tracking', { error: e.message }); }
 }
 
+/** Something changed on GitHub through the app: the counts and lists that come from there are asked again now, not at the next poll. */
+function githubChanged(result) { state.pollBoard(); state.pollMyPrs(); return result; }
+
+/** A remote was added, changed or removed: the repository may have become a GitHub one, or stopped being one. */
+async function remoteChanged(p) {
+  const v = await state.resolveSlug(repo(p));
+  state.bus.emit('repos', state.list());
+  state.pollBoard();
+  return v;
+}
+
+/** After a merge on GitHub, bring the news into the clone (and drop remote branches that are gone). */
+function fetchAfterMerge(id, s) {
+  return mutate({ id }, 'Fetch after merge', (r) => git.fetch(r, { remote: s.remote || 'origin', prune: true }));
+}
+
 /** The local branch a pull request is checked out as: its own name, or "pr-N-name" when it comes from a fork. */
 function prLocalName(pr) {
   return pr.isCrossRepository ? `pr-${pr.number}-${pr.headRefName}`.replace(/[^A-Za-z0-9._/-]/g, '-') : pr.headRefName;
+}
+
+/** The branch a new pull request from `head` opens into, and why (see prbase.js). */
+async function prBaseFor(r, s, head, sum) {
+  const meta = await gh.repoMeta(s).catch(() => null);
+  const fallback = (meta && meta.default_branch) || sum.defaultBranch || 'main';
+  const rem = s.remote || 'origin';
+  const pick = await prbase.choose({
+    cfg: config.get(), slug: s, head, fallback,
+    exists: async (b) => (await git.refExists(r, `refs/remotes/${rem}/${b}`)) || gh.branchExists(s, b),
+  });
+  return { ...pick, defaultBranch: fallback };
 }
 
 // ---------------- PR drafts (pending inline review comments) ----------------
@@ -140,7 +156,7 @@ async function repoBranchInfo(r, branch) {
 }
 
 const BULK = {
-  fetch: { label: 'Fetch', check: async (s, r) => unreachable.skipReason(r, await git.remotes(r)), run: (r) => git.fetch(r, { all: true }) },
+  fetch: { label: 'Fetch', check: async (s, r) => unreachable.skipReason(r, await git.remotes(r)), run: (r, a) => git.fetch(r, { all: true, prune: !!(a && a.prune) }) },
   pull: {
     label: 'Pull',
     check: (s) => s.inProgress.length ? `${s.inProgress[0]} in progress` : s.detached ? 'detached HEAD' : !s.upstream ? 'no upstream' : s.dirty ? 'uncommitted changes' : s.behind === 0 ? 'already up to date' : null,
@@ -328,9 +344,9 @@ const H = {
   'repos.refresh': async (p) => { if (p.id) await state.refresh(p.id); else await state.refreshAll(); return { ok: true }; },
   'repo.summary': async (p) => state.refresh(p.id),
   'repo.remotes': (p) => git.remotes(repo(p)),
-  'repo.addRemote': (p) => mutate(p, 'Add remote', (r) => git.addRemote(r, p)).then(() => state.resolveSlug(repo(p))),
-  'repo.setRemoteUrl': (p) => mutate(p, 'Change remote', (r) => git.setRemoteUrl(r, p)).then(() => state.resolveSlug(repo(p))),
-  'repo.removeRemote': (p) => mutate(p, 'Remove remote', (r) => git.removeRemote(r, p)).then(() => state.resolveSlug(repo(p))),
+  'repo.addRemote': (p) => mutate(p, 'Add remote', (r) => git.addRemote(r, p)).then(() => remoteChanged(p)),
+  'repo.setRemoteUrl': (p) => mutate(p, 'Change remote', (r) => git.setRemoteUrl(r, p)).then(() => remoteChanged(p)),
+  'repo.removeRemote': (p) => mutate(p, 'Remove remote', (r) => git.removeRemote(r, p)).then(() => remoteChanged(p)),
   'repo.clone': async (p) => {
     const dest = path.resolve(p.parent, p.name);
     if (!underRoot(dest)) throw new Error('Clone into a folder inside one of your configured root folders.');
@@ -643,8 +659,9 @@ const H = {
     const r = repo(p);
     const s = slug(p);
     const sum = await git.summary(r);
-    const meta = await gh.repoMeta(s).catch(() => null);
-    const base = p.base || (meta && meta.default_branch) || sum.defaultBranch || 'main';
+    // Without a base in the request, the user's base branch settings decide; the page then shows why.
+    const pick = await prBaseFor(r, s, sum.branch, sum);
+    const base = p.base || pick.base;
     const rem = s.remote || 'origin';
     const baseRef = (await git.refExists(r, `refs/remotes/${rem}/${base}`)) ? `${rem}/${base}` : base;
     let commits = [];
@@ -660,7 +677,69 @@ const H = {
     // Branches made from an issue ("123-short-title") link back to it so merging closes the issue.
     const issue = /^(?:[^/]+\/)?(\d+)[-_]/.exec(sum.branch || '');
     if (issue && !/\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #\d+/i.test(body)) body = `${body ? `${body}\n\n` : ''}Closes #${issue[1]}`;
-    return { base, head: sum.branch, title, body, commits, needsPush: !sum.upstream || sum.ahead > 0, upstream: sum.upstream, ahead: sum.ahead };
+    const cfg = config.get();
+    return {
+      base, head: sum.branch, title, body, commits, needsPush: !sum.upstream || sum.ahead > 0, upstream: sum.upstream, ahead: sum.ahead,
+      defaultBranch: pick.defaultBranch, baseMissing: pick.missing, repoBase: (cfg.prBaseByRepo || {})[prbase.key(s)] || '', allBase: cfg.prBase || '',
+    };
+  },
+  // The branch a pull request from the current (or given) branch would open into.
+  'pr.base': async (p) => {
+    const r = repo(p);
+    const sum = await git.summary(r);
+    return prBaseFor(r, slug(p), p.branch || sum.branch, sum);
+  },
+  // Remember (or, with an empty branch, forget) the base branch for one repository.
+  'pr.setBase': (p) => {
+    const branch = String(p.branch || '').trim();
+    if (!prbase.validName(branch)) throw new Error(`"${branch}" is not a valid branch name.`);
+    return config.update({ prBaseByRepo: prbase.withRepo(config.get().prBaseByRepo, slug(p), branch) });
+  },
+  // ----- Copilot: only when the user presses its button (see copilot.js) -----
+  'ai.status': () => copilot.status(),
+  // A commit message for what Commit would commit: the staged changes, or everything when nothing is staged.
+  'ai.commitMessage': async (p) => {
+    const r = repo(p);
+    const st = await git.status(r);
+    const staged = st.staged.length > 0;
+    if (!staged && !(st.unstaged.length + st.untracked.length)) throw new Error('There are no changes to describe.');
+    const range = staged ? ['--cached'] : [];
+    const q = { quiet: true };
+    const [stat, diff, log] = await Promise.all([
+      git.git(r, ['diff', '--no-color', '--no-ext-diff', '--stat=120', ...range], q),
+      git.git(r, ['diff', '--no-color', '--no-ext-diff', '-U3', ...range], q),
+      git.git(r, ['log', '-n12', '--format=%s'], { quiet: true, okCodes: [0, 128] }), // 128: no commits yet
+    ]);
+    let files = stat.stdout.trim();
+    let text = diff.stdout;
+    if (!staged && st.untracked.length) {
+      files = `${files}${files ? '\n' : ''}${st.untracked.map((f) => ` ${f.path} (new file)`).join('\n')}`;
+      text = `${text}${text ? '\n' : ''}${copilot.newFiles(r.path, st.untracked)}`;
+    }
+    const recent = log.code === 0 ? log.stdout.split('\n').map((x) => x.trim()).filter(Boolean) : [];
+    const message = await copilot.ask(copilot.commitPrompt({ files, diff: text, recent, draft: String(p.draft || '') }), { repoLabel: r.label });
+    return { message, staged, cut: text.length > copilot.MAX_DIFF };
+  },
+  // Title and description for a pull request from the current branch into p.base.
+  'ai.prText': async (p) => {
+    const r = repo(p);
+    const s = slug(p);
+    const sum = await git.summary(r);
+    const base = p.base || (await prBaseFor(r, s, sum.branch, sum)).base;
+    const rem = s.remote || 'origin';
+    const baseRef = (await git.refExists(r, `refs/remotes/${rem}/${base}`)) ? `${rem}/${base}` : base;
+    const q = { quiet: true };
+    const [log, stat, diff, template] = await Promise.all([
+      git.git(r, ['log', '--reverse', '-n50', '--format=%s%x1f%b%x1e', `${baseRef}..HEAD`], q),
+      git.git(r, ['diff', '--no-color', '--no-ext-diff', '--stat=120', `${baseRef}...HEAD`], q),
+      git.git(r, ['diff', '--no-color', '--no-ext-diff', '-U3', `${baseRef}...HEAD`], q),
+      gh.prTemplate(s, base).catch(() => ''),
+    ]);
+    const commits = log.stdout.split('\x1e').map((x) => x.replace(/^\n/, '')).filter((x) => x.trim())
+      .map((rec) => { const [subject, body = ''] = rec.split('\x1f'); return { subject: subject.trim(), body: body.trim() }; });
+    if (!commits.length) throw new Error(`${sum.branch} has no commits that ${base} lacks, so there is nothing to describe.`);
+    const text = await copilot.ask(copilot.prPrompt({ head: sum.branch, base, commits, files: stat.stdout.trim(), diff: diff.stdout, template }), { repoLabel: r.label });
+    return { ...copilot.splitPr(text), cut: diff.stdout.length > copilot.MAX_DIFF };
   },
   'pr.create': async (p) => {
     const r = repo(p);
@@ -670,7 +749,7 @@ const H = {
       const res = await mutate(p, 'Push', (rr) => git.push(rr, { setUpstream: !sum.upstream, remote: s.remote }));
       await afterPush(r, res, `Push ${res.branch}`);
     }
-    return gh.prCreate(s, { ...p, head: p.head || sum.branch });
+    return githubChanged(await gh.prCreate(s, { ...p, head: p.head || sum.branch }));
   },
   'pr.comment': (p) => gh.prComment(slug(p), p.number, p.body),
   'pr.editComment': (p) => (p.review ? gh.editReviewComment(slug(p), p.commentId, p.body) : gh.editIssueComment(slug(p), p.commentId, p.body)),
@@ -691,19 +770,24 @@ const H = {
     const d = readDraft(p);
     const res = await gh.submitReview(slug(p), p.number, { event: p.event, body: p.body, comments: d.comments, commitId: p.commitId });
     writeDraft(p, { comments: [] }); // cleared only after GitHub accepted it
-    return res;
+    return githubChanged(res);
   },
   'pr.edit': (p) => gh.prEdit(slug(p), p.number, p),
   'pr.ready': (p) => gh.prReady(slug(p), p.number, !!p.ready),
-  'pr.close': (p) => gh.prClose(slug(p), p.number),
-  'pr.reopen': (p) => gh.prReopen(slug(p), p.number),
+  'pr.close': (p) => gh.prClose(slug(p), p.number).then(githubChanged),
+  'pr.reopen': (p) => gh.prReopen(slug(p), p.number).then(githubChanged),
   'pr.updateBranch': (p) => gh.prUpdateBranch(slug(p), p.number),
   'pr.disableAuto': (p) => gh.prDisableAuto(slug(p), p.number),
   'pr.merge': async (p) => {
     const s = slug(p);
     const res = await gh.prMerge(s, p.number, p);
-    if (!p.auto) trackMergeCommit(p.id, s, p.number);
-    return res;
+    if (!p.auto) {
+      trackMergeCommit(p.id, s, p.number);
+      // The clone learns about the merge now, not at the next fetch: the base shows what to pull and the branch
+      // shows as gone. Not waited for; the clean-up, when one follows, fetches by itself.
+      if (!p.thenCleanup) fetchAfterMerge(p.id, s).catch(() => {});
+    }
+    return githubChanged(res);
   },
   // After a merge: switch to the base branch, pull it, delete the merged branch here and on GitHub.
   'pr.cleanup': (p) => mutate(p, `Clean up after PR #${p.number}`, async (r) => {
@@ -741,10 +825,10 @@ const H = {
   // ----- issues -----
   'issue.list': (p) => gh.issueList(slug(p), p),
   'issue.view': (p) => gh.issueView(slug(p), p.number),
-  'issue.create': (p) => gh.issueCreate(slug(p), p),
+  'issue.create': (p) => gh.issueCreate(slug(p), p).then(githubChanged),
   'issue.comment': (p) => gh.issueComment(slug(p), p.number, p.body),
-  'issue.close': (p) => gh.issueClose(slug(p), p.number, p.reason),
-  'issue.reopen': (p) => gh.issueReopen(slug(p), p.number),
+  'issue.close': (p) => gh.issueClose(slug(p), p.number, p.reason).then(githubChanged),
+  'issue.reopen': (p) => gh.issueReopen(slug(p), p.number).then(githubChanged),
   'issue.edit': (p) => gh.issueEdit(slug(p), p.number, p),
   'issue.branch': (p) => mutate(p, `Branch for issue #${p.number}`, async (r) => {
     const sum = await git.summary(r);
@@ -824,13 +908,13 @@ const H = {
         if (sum.branch !== p.branch) {
           if (!(await git.refExists(r, `refs/remotes/${s.remote || 'origin'}/${p.branch}`))) throw new Error('branch not pushed and not checked out');
         } else if (!sum.upstream || sum.ahead > 0) {
-          const res = await queue.exclusive(r.id, 'Push', () => git.git(r, ['push', '-u', s.remote || 'origin', `refs/heads/${p.branch}:refs/heads/${p.branch}`], { timeout: 5 * 60_000 }));
-          void res;
+          // like any other push: under the lock, refreshed afterwards, and its workflow runs are followed
+          const res = await mutate({ id }, 'Push', (rr) => git.push(rr, { setUpstream: !sum.upstream, remote: s.remote }));
+          await afterPush(r, res, `Push ${res.branch}`);
         }
-        const meta = await gh.repoMeta(s).catch(() => null);
-        const base = (meta && meta.default_branch) || sum.defaultBranch;
+        const { base } = await prBaseFor(r, s, p.branch, sum);
         const pr = await gh.prCreate(s, { head: p.branch, base, title: p.title, body: p.body, draft: p.draft });
-        results.push({ id, label: r.label, status: 'ok', ...pr, slug: s });
+        results.push({ id, label: r.label, status: 'ok', ...pr, base, slug: s });
       } catch (e) {
         results.push({ id, label: state.repos.get(id) ? state.repos.get(id).label : id, status: 'failed', message: e.message });
       }
@@ -845,6 +929,7 @@ const H = {
         } catch (e) { x.message = `Created, but could not add cross-links: ${e.message}`; }
       }
     }
+    if (ok.length) githubChanged();
     return results.map(({ slug: _s, ...rest }) => rest);
   },
   'feature.mergePrs': async (p) => {
@@ -858,6 +943,7 @@ const H = {
         const s = state.slugOf(it.id);
         const res = await gh.prMerge(s, it.number, { method: p.method, headOid: it.headOid, deleteBranch: p.deleteBranch, headRef: p.branch });
         trackMergeCommit(it.id, s, it.number);
+        await fetchAfterMerge(it.id, s).catch(() => {}); // so the table, and what follows, see the merge
         results.push({ ...it, label, status: 'ok', message: res.deleteError ? `merged; branch not deleted: ${res.deleteError}` : 'merged' });
       } catch (e) {
         results.push({ ...it, label, status: 'failed', message: e.message });
@@ -920,6 +1006,7 @@ function trackMergeCommit(id, s, number, attempt = 0) {
       const m = await gh.prMergeCommit(s, number);
       if (m.state === 'MERGED' && m.mergeCommit && m.mergeCommit.oid) {
         state.addTracker({ repoId: id, slug: s, sha: m.mergeCommit.oid, branch: m.baseRefName, reason: `Merged PR #${number} into ${m.baseRefName}`, pr: number });
+        githubChanged(); // after the tracker exists, so the board does not take the merge commit for a push made elsewhere
         return;
       }
     } catch {}

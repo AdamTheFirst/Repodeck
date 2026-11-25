@@ -220,7 +220,7 @@ export function setup(main) {
       state.picker.el,
       h('div', { class: 'row wrap' }, h('span', { class: 'nowrap' }, 'Clone into'), destSel, h('span', { class: 'nowrap' }, 'using'), protoSel,
         state.proto === 'ssh' ? [h('span', { class: 'nowrap' }, 'host'), h('input', { type: 'text', value: state.sshHost, placeholder: 'github.com', style: { width: '170px' }, spellcheck: 'false', title: 'Host or alias from your SSH config', onchange: (e) => { state.sshHost = e.target.value.trim(); state.detected = false; } })] : null),
-      state.detected && state.proto === 'ssh' ? h('div', { class: 'info-box' }, `Your existing repositories for this account use the SSH host “${state.sshHost}”, so new clones will too. Change it here or later in Settings → Account.`) : null),
+      state.detected && state.proto === 'ssh' ? h('div', { class: 'info-box' }, `Your existing repositories for this account use the SSH host “${state.sshHost}”, so new clones will too. Change it here or later in Settings → Accounts & folders.`) : null),
     foot({ next: () => {
       if (state.picker.chosen().length && !state.dest) { banner({ level: 'warn', title: 'Choose the folder to clone into', timeout: 3000 }); return; }
       go(3);

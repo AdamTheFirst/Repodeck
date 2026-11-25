@@ -6,6 +6,7 @@ import { onRoute, navigate, start as startRouter } from './router.js';
 import { renderRepo } from './repoview.js';
 import { openPalette } from './palette.js';
 import { accountChip, loadAccounts } from './account.js';
+import { setTheme } from './themes.js';
 
 const main = document.getElementById('main');
 let disposeView = null;
@@ -27,10 +28,11 @@ function tellHostTray() { host(`tray ${store.config && store.config.closeToTray 
 
 function applyTheme() {
   const t = store.config ? store.config.theme : 'system';
-  if (t === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  setTheme(t);
+  prefs.set('theme', t); // remembered here too, so the next start has the right colours before the settings arrive
   tellHostTheme();
 }
+setTheme(prefs.get('theme', 'system'));
 
 // ---------- updates ----------
 // Says once per new version that it exists. Nothing is downloaded until the user asks.
@@ -222,7 +224,15 @@ async function boot() {
     ].filter(Boolean),
   }));
   on('activity', (a) => { if (!a.ok) { lastErr = a; renderStatus(); } emit('activity', a); });
-  onPending((n) => { pendingCount = n; renderStatus(); });
+  // A thin line under the top bar while a request is out; short ones never show it.
+  const netbar = h('div', { class: 'netbar', 'aria-hidden': 'true' }, h('i'));
+  document.getElementById('body').before(netbar);
+  let netTimer = null;
+  onPending((n) => {
+    pendingCount = n; renderStatus();
+    if (n && !netTimer && !netbar.classList.contains('on')) netTimer = setTimeout(() => { netTimer = null; netbar.classList.toggle('on', pendingCount > 0); }, 300);
+    if (!n) { clearTimeout(netTimer); netTimer = null; netbar.classList.remove('on'); }
+  });
   let offlineTimer = null;
   const offline = (show) => {
     let el = document.getElementById('offline');
