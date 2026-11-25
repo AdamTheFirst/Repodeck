@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.3.0
 
 - Pull requests can always open into a branch you choose, for example `develop`. Set it for every repository under Settings → Behaviour, or for one repository on the New pull request page ("Always use … for this repository"). The branch is used when the repository has it; otherwise the default branch is used and the page says so. Feature branches → Create pull requests follows the same setting
 - New pull request: changing the base branch reloads the commits, and the title and description as long as you have not edited them. The page uses the width of the window, with the commits beside the form
