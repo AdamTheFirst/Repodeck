@@ -524,7 +524,7 @@ function createPr(view, r) {
     if (pre.head === pre.base) { mount(page, h('div', { class: 'empty' }, h('h3', null, `You are on ${pre.base}, the base branch`), h('div', null, 'Create a branch for your change first (branch button at the top).'))); return; }
     const remote = r.slug.remote || 'origin';
     const bases = [...new Set([pre.base, ...refs.remote.filter((b) => b.name.startsWith(`${remote}/`)).map((b) => b.name.slice(remote.length + 1))])].filter((b) => b && b !== 'HEAD' && b !== pre.head);
-    const base = h('select', { title: 'The branch this pull request merges into', onchange: () => changeBase() }, bases.map((b) => h('option', { value: b, selected: b === pre.base }, b)));
+    const base = h('select', { title: 'The branch this pull request merges into', style: { maxWidth: 'min(100%, 420px)' }, onchange: () => changeBase() }, bases.map((b) => h('option', { value: b, selected: b === pre.base }, b)));
     const count = h('span', { class: 'muted' });
     const baseNote = h('div', { class: 'row wrap muted pr-base-note' });
     const title = h('input', { type: 'text', value: pre.title, style: { width: '100%' } });

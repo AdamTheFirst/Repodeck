@@ -13,9 +13,13 @@ const listeners = new Set();
 export function onPending(fn) { listeners.add(fn); }
 function notifyPending() { for (const l of listeners) l(pending.size); }
 
-export async function rpc(method, params = {}) {
+/**
+ * One call to the local server. quiet: something the app does by itself in the background (following a change,
+ * reading counts). It is not counted as waiting, so the status bar says "Working…" only for what the user asked for.
+ */
+export async function rpc(method, params = {}, { quiet = false } = {}) {
   const key = { method };
-  pending.add(key); notifyPending();
+  if (!quiet) { pending.add(key); notifyPending(); }
   try {
     let res;
     try {
@@ -34,7 +38,7 @@ export async function rpc(method, params = {}) {
     try { data = await res.json(); } catch { throw new ApiError({ error: `Server returned ${res.status}` }); }
     if (data.error) throw new ApiError(data);
     return data.result;
-  } finally { pending.delete(key); notifyPending(); }
+  } finally { if (!quiet) { pending.delete(key); notifyPending(); } }
 }
 
 const handlers = {};

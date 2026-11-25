@@ -315,8 +315,12 @@ async function prMerge(s, n, { method, subject, body, auto, headOid, deleteBranc
   let deleteError = null;
   if (deleteBranch && !auto && !crossRepo && headRef) {
     try {
-      await gh(['api', '-X', 'DELETE', `repos/${s.owner}/${s.repo}/git/refs/heads/${encodeURI(headRef)}`], O(s));
-      branchDeleted = true;
+      // Many repositories delete the branch themselves on merge: "not there any more" is the result that was asked
+      // for, not a failure, so it is neither reported nor listed as one.
+      const r = await gh(['api', '-X', 'DELETE', `repos/${s.owner}/${s.repo}/git/refs/heads/${encodeURI(headRef)}`], { ...O(s), okCodes: [0, 1] });
+      const said = `${r.stderr || ''} ${r.stdout || ''}`;
+      if (r.code === 0 || /Reference does not exist|HTTP 404/i.test(said)) branchDeleted = true;
+      else deleteError = said.trim().split('\n')[0] || 'GitHub did not delete the branch.';
     } catch (e) { deleteError = e.message; }
   }
   return { branchDeleted, deleteError };

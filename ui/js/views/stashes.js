@@ -18,8 +18,8 @@ export function render(view, r) {
   let stashes = [];
   let selected = null;
 
-  async function load() {
-    try { stashes = await rpc('stash.list', { id: r.id }); } catch (e) { mount(listEl, h('div', { class: 'errbox' }, e.message)); return; }
+  async function load(quiet) {
+    try { stashes = await rpc('stash.list', { id: r.id }, { quiet: quiet === true }); } catch (e) { mount(listEl, h('div', { class: 'errbox' }, e.message)); return; }
     if (selected && !stashes.some((s) => s.ref === selected.ref && s.hash === selected.hash)) selected = null;
     mount(listEl,
       stashes.length ? stashes.map((s) => h('div', { class: `list-row ${selected && selected.hash === s.hash ? 'selected' : ''}`, onclick: () => { selected = s; load(); show(s); } },
@@ -82,5 +82,5 @@ export function render(view, r) {
   }
 
   load();
-  return { dispose() {}, onSummary: load };
+  return { dispose() {}, onSummary: () => load(true) };
 }

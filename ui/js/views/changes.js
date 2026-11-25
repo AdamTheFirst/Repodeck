@@ -102,10 +102,11 @@ export function render(view, r) {
   mount(view, h('div', { class: 'split' }, left, right));
 
   // ---------- data ----------
-  async function load() {
+  /** quiet: the list follows a change by itself (the window got focus, the status moved); nobody is waiting for it. */
+  async function load(quiet) {
     if (loading) return; loading = true;
     try {
-      data = await rpc('repo.changes', { id: r.id });
+      data = await rpc('repo.changes', { id: r.id }, { quiet: quiet === true });
       if (disposed) return;
       if (selected && !findFile(selected)) {
         // the file moved between groups (e.g. it was just staged): keep following it
@@ -118,7 +119,7 @@ export function render(view, r) {
       mount(listEl, h('div', { class: 'errbox', style: { margin: '10px' } }, e.message));
     } finally { loading = false; }
   }
-  const reload = debounce(load, 250);
+  const reload = debounce(() => load(true), 250);
 
   function findFile(s) {
     if (!data || !s) return null;
@@ -502,7 +503,7 @@ export function render(view, r) {
     draw();
   }
 
-  const unsub = subscribe('refresh', () => load());
+  const unsub = subscribe('refresh', () => load(true));
   load();
   // Reload only when the working tree state actually changed (the summary carries a hash of git status output).
   const stateKey = () => { const s = r.summary || {}; return `${s.statusHash}|${(s.inProgress || []).join(',')}|${s.locked}`; };

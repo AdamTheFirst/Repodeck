@@ -27,7 +27,7 @@ async function mutate(p, label, fn) {
   try {
     return await queue.exclusive(r.id, label, () => fn(r));
   } finally {
-    state.refresh(r.id);
+    state.refresh(r.id, true);
   }
 }
 
@@ -252,7 +252,7 @@ async function bulkRun({ op, ids, args = {} }) {
         return { id, label: r.label, status: 'ok', message: (out && out.output) || '' };
       } catch (e) {
         return { id, label: r.label, status: 'failed', message: e.message };
-      } finally { state.refresh(r.id); }
+      } finally { state.refresh(r.id, true); }
     });
   });
   return results.map((x, i) => (x.ok ? x.value : { id: ids[i], status: 'failed', message: x.error.message }));
@@ -975,7 +975,7 @@ const H = {
         await queue.exclusive(r.id, 'Delete branch', () => git.deleteBranch(r, { name: it.branch, force: !!it.force }));
         out.push({ ...it, label: r.label, status: 'ok' });
       } catch (e) { out.push({ ...it, label: r.label, status: 'failed', message: e.message }); }
-      state.refresh(r.id);
+      state.refresh(r.id, true);
     }
     return out;
   },

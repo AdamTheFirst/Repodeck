@@ -98,10 +98,17 @@ export function renderRepo(main, id, tab, sub) {
   // local branch and tag counts for the Branches tab, fetched when the page opens and after each change
   let refCounts = null;
   let refTimer = null;
+  // The counts on the Branches tab. Reading every branch is slow in a big repository, so it is done again only
+  // when the status says something about branches moved, not on every routine status read.
+  let refKey = null;
   function loadRefCounts() {
+    const s = r.summary || {};
+    const key = [s.branch, s.oid, s.upstream, s.ahead, s.behind, s.defaultRemoteRef].join('|');
+    if (key === refKey) return;
+    refKey = key;
     clearTimeout(refTimer);
     refTimer = setTimeout(async () => {
-      try { const refs = await rpc('repo.refs', { id: r.id }); if (disposed) return; refCounts = { branches: refs.local.length, tags: (refs.tags || []).length }; renderTabs(); } catch { /* the tab just has no count */ }
+      try { const refs = await rpc('repo.refs', { id: r.id }, { quiet: true }); if (disposed) return; refCounts = { branches: refs.local.length, tags: (refs.tags || []).length }; renderTabs(); } catch { /* the tab just has no count */ }
     }, 400);
   }
   loadRefCounts();
@@ -148,7 +155,7 @@ export function renderRepo(main, id, tab, sub) {
     subscribe('repos', () => { if (!disposed && store.byId.has(id)) { renderHead(); renderTabs(); } }),
   ];
   renderHead(); renderTabs();
-  rpc('repo.summary', { id }).catch(() => {});
+  rpc('repo.summary', { id }, { quiet: true }).catch(() => {});
 
   mount(view, h('div', { class: 'skeleton' }, 'Loading…'));
   LOADERS[tab]().then((m) => {

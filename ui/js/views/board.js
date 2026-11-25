@@ -129,11 +129,11 @@ export function render(main) {
     if (store.trackers.some((t) => t.state === 'running' || t.state === 'waiting') || Object.values(store.board).some((b) => boardState(b) === 'running')) draw();
   }, 2000);
   // Tell the server the board is still on screen, so it keeps polling at the faster rate.
-  const stillOpen = () => { if (document.visibilityState === 'visible') rpc('app.boardVisible', { visible: true }).catch(() => {}); };
+  const stillOpen = () => { if (document.visibilityState === 'visible') rpc('app.boardVisible', { visible: true }, { quiet: true }).catch(() => {}); };
   const beat = setInterval(stillOpen, 60_000);
   document.addEventListener('visibilitychange', stillOpen);
   draw();
-  rpc('trackers.refresh').catch(() => {});
+  rpc('trackers.refresh', {}, { quiet: true }).catch(() => {});
   return () => { unsubs.forEach((u) => u()); clearInterval(tick); clearInterval(beat); document.removeEventListener('visibilitychange', stillOpen); };
 }
 

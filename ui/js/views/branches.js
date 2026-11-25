@@ -35,7 +35,7 @@ export function render(view, r) {
   async function follow() {
     if (disposed || !data || checking) return;
     checking = true;
-    try { const refs = await rpc('repo.refs', { id: r.id }); if (!disposed && JSON.stringify(refs) !== shown) await load(); } catch { /* the next change tries again */ } finally { checking = false; }
+    try { const refs = await rpc('repo.refs', { id: r.id }, { quiet: true }); if (!disposed && JSON.stringify(refs) !== shown) await load(); } catch { /* the next change tries again */ } finally { checking = false; }
   }
 
   function draw() {

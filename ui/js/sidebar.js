@@ -55,7 +55,7 @@ export async function loadRemote(force) {
   if (!force && remoteFor === who && remote) return;
   if (remoteFor !== who) { remote = null; schedule(); }
   remoteFor = who;
-  try { const list = await rpc('gh.repoListAll'); if (remoteFor === who) { remote = list; remoteError = null; } } catch (e) { if (remoteFor === who) { remote = []; remoteError = e.message.split('\n')[0]; } }
+  try { const list = await rpc('gh.repoListAll', {}, { quiet: true }); if (remoteFor === who) { remote = list; remoteError = null; } } catch (e) { if (remoteFor === who) { remote = []; remoteError = e.message.split('\n')[0]; } }
   schedule();
 }
 
