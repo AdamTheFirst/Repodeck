@@ -2,7 +2,7 @@
 
 All notable changes are listed here. Versions follow [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 1.3.1
 
 - "Working…" no longer stays on with many repositories. Coming back to the window re-read every repository and waited for it, which takes many seconds with dozens of them; now it re-reads the open repository at once and all of them at most every two minutes. What the app does by itself in the background (following changes, tab counts, the repository list from GitHub) is not shown as waiting any more, and routine status reads that overlap share one round instead of queueing a second one (that queueing came in with 1.3.0)
 - The count on the Branches tab is read again when a branch actually moved, not on every status read
