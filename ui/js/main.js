@@ -37,7 +37,7 @@ setTheme(prefs.get('theme', 'system'));
 // ---------- updates ----------
 // Says once per new version that it exists. Nothing is downloaded until the user asks.
 async function checkForUpdate() {
-  let u; try { u = await rpc('update.check'); } catch { return; }
+  let u; try { u = await rpc('update.check', {}, { quiet: true }); } catch { return; }
   if (!u || !u.available || prefs.get('updateTold') === u.latest) return;
   prefs.set('updateTold', u.latest);
   banner({
@@ -113,7 +113,7 @@ onRoute((parts) => {
   if (disposeView) { try { disposeView(); } catch {} disposeView = null; }
   const [view = 'repo', a, b, c] = parts;
   store.view = view;
-  rpc('app.boardVisible', { visible: view === 'board' }).catch(() => {});
+  rpc('app.boardVisible', { visible: view === 'board' }, { quiet: true }).catch(() => {});
   if (view === 'repo') {
     let id = a && store.byId.has(a) ? a : (store.selected && store.byId.has(store.selected) ? store.selected : null);
     if (!id && store.repos.length) {
@@ -244,22 +244,26 @@ async function boot() {
     document.body.append(el);
   };
   onConnection((ok) => { clearTimeout(offlineTimer); if (ok) offline(false); else offlineTimer = setTimeout(() => offline(true), 4000);
-    store.connected = ok; renderStatus(); if (ok) rpc('repos.list').then(({ repos: l }) => setRepos(l)).catch(() => {}); });
+    store.connected = ok; renderStatus(); if (ok) rpc('repos.list', {}, { quiet: true }).then(({ repos: l }) => setRepos(l)).catch(() => {}); });
   subscribe('config', () => { applyTheme(); applyTitle(); tellHostTray(); renderTopbar(); });
   on('focus', () => { window.focus(); host('focus'); });
   subscribe('accounts', renderTopbar);
   connect();
-  rpc('app.diagnostics').then((d) => {
+  rpc('app.diagnostics', {}, { quiet: true }).then((d) => {
     const missing = [['Git', d.git], ['GitHub CLI', d.gh]].filter(([, v]) => /not available/.test(v)).map(([n]) => n);
     if (missing.length) banner({ level: 'error', title: `${missing.join(' and ')} not found`, body: `Repodeck needs ${missing.join(' and ')}. Run Repodeck Setup and choose Repair to install ${missing.length > 1 ? 'them' : 'it'}.${missing.includes('Git') ? '' : ' Local git features still work.'}`, timeout: 0 });
   }).catch(() => {});
 
-  // refresh on focus (cheap: one status call per repo, done server-side in parallel)
-  let lastFocus = 0;
+  // Coming back to the window: the open repository is read again at once, which is one quick read. All of them are
+  // read at most every two minutes from here: with many repositories that takes a while, and the server already
+  // reads them on its own schedule and watches every .git folder. Nobody asked for either, so both are quiet.
+  let lastFocus = 0; let lastAll = Date.now();
   window.addEventListener('focus', () => {
     if (Date.now() - lastFocus < 3000) return;
     lastFocus = Date.now();
-    rpc('repos.refresh', {}).catch(() => {});
+    const cur = current();
+    if (Date.now() - lastAll > 120_000) { lastAll = Date.now(); rpc('repos.refresh', {}, { quiet: true }).catch(() => {}); }
+    else if (cur) rpc('repos.refresh', { id: cur.id }, { quiet: true }).catch(() => {});
     emit('refresh');
   });
 

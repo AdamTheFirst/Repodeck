@@ -4,6 +4,11 @@ All notable changes are listed here. Versions follow [Semantic Versioning](https
 
 ## Unreleased
 
+- "Working…" no longer stays on with many repositories. Coming back to the window re-read every repository and waited for it, which takes many seconds with dozens of them; now it re-reads the open repository at once and all of them at most every two minutes. What the app does by itself in the background (following changes, tab counts, the repository list from GitHub) is not shown as waiting any more, and routine status reads that overlap share one round instead of queueing a second one (that queueing came in with 1.3.0)
+- The count on the Branches tab is read again when a branch actually moved, not on every status read
+- New pull request: in a narrow window, or with a very long branch name in the list, the form ran off the right edge. The commits now move below the form and the base branch list is capped in width
+- Merging in a repository that deletes merged branches itself: "Reference does not exist" is no longer reported or listed as a failure
+- The pills at the top right keep to one line in a narrow window
 - Compare branches: the dialog opens on the first changed file instead of an empty box, marks the file that is shown, and says so when there is nothing to compare
 
 ## 1.3.0

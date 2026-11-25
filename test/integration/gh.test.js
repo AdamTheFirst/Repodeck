@@ -21,7 +21,7 @@ require.cache[procPath] = {
       calls.push({ cmd, args, opts });
       const res = handler(args, opts);
       if (res instanceof Error) throw res;
-      return { stdout: res.stdout || '', stderr: '', code: 0 };
+      return { stdout: res.stdout || '', stderr: res.stderr || '', code: res.code || 0 };
     },
   },
 };
@@ -123,6 +123,25 @@ test('merge uses --match-head-commit, deletes the branch via the API (never a lo
   assert.equal(del.args[3], 'repos/acme/a/git/refs/heads/feature/x');
   assert.equal(res.branchDeleted, true);
   await assert.rejects(gh.prMerge({ owner: 'acme', repo: 'a' }, 7, { method: 'force' }), /Invalid merge method/);
+});
+
+test('a branch that GitHub already deleted on merge counts as deleted, and any other refusal is reported', async () => {
+  const merged = { method: 'squash', deleteBranch: true, headRef: 'feature/x' };
+  calls.length = 0;
+  handler = (args) => {
+    if (args[0] === 'auth') return { stdout: ACCOUNTS };
+    if (args[0] === 'api' && args[2] === 'DELETE') return { code: 1, stderr: 'gh: Reference does not exist (HTTP 404)' };
+    return { stdout: '' };
+  };
+  assert.deepEqual(await gh.prMerge({ owner: 'acme', repo: 'a' }, 7, merged), { branchDeleted: true, deleteError: null });
+  const del = calls.find((c) => c.args[0] === 'api' && c.args[2] === 'DELETE');
+  assert.deepEqual(del.opts.okCodes, [0, 1], 'not listed as a failed command');
+  handler = (args) => {
+    if (args[0] === 'auth') return { stdout: ACCOUNTS };
+    if (args[0] === 'api' && args[2] === 'DELETE') return { code: 1, stderr: 'gh: Protected branch (HTTP 422)\nmore' };
+    return { stdout: '' };
+  };
+  assert.deepEqual(await gh.prMerge({ owner: 'acme', repo: 'a' }, 7, merged), { branchDeleted: false, deleteError: 'gh: Protected branch (HTTP 422)' });
 });
 
 test('review submission carries inline comments with sides and ranges', async () => {

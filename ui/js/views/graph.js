@@ -473,7 +473,7 @@ export function render(view, r, sub) {
   const follow = debounce(async () => {
     if (disposed || !meta || loadingMore) return;
     let m;
-    try { m = await rpc('repo.graphMeta', { id: r.id }); } catch { return; }
+    try { m = await rpc('repo.graphMeta', { id: r.id }, { quiet: true }); } catch { return; }
     if (!disposed && meta && sig(m) !== sig(meta)) reset();
   }, 500);
   const unsub = subscribe('refresh', follow);

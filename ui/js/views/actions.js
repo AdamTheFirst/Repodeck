@@ -59,7 +59,7 @@ function runList(view, r) {
   async function load(quiet) {
     if (!quiet) mount(body, h('div', { class: 'progress' }), h('div', { class: 'skeleton' }, 'Loading…'));
     try {
-      const runs = await rpc('run.list', { id: r.id, workflow: f.workflow || undefined, branch: f.branch || undefined, status: f.status || undefined, limit: 50 });
+      const runs = await rpc('run.list', { id: r.id, workflow: f.workflow || undefined, branch: f.branch || undefined, status: f.status || undefined, limit: 50 }, { quiet: quiet === true });
       mount(body, h('div', { class: 'page', style: { paddingTop: 0 } }, h('h3', { style: { margin: '6px 0 8px' } }, 'Recent runs'),
         runs.length ? h('div', { class: 'panel' }, runs.map((x) => h('div', { class: 'run-row', onclick: () => navigate(`#/repo/${r.id}/actions/run/${x.databaseId}`) },
           statusBadge(x.status, x.conclusion),

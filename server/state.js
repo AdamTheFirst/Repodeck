@@ -106,9 +106,14 @@ function slugOf(id) {
 // ---------- refresh ----------
 
 const inflight = new Map();
-const again = new Set(); // asked for while a read was already running: that read may predate the change, so read once more
-async function refresh(id) {
-  if (inflight.has(id)) { again.add(id); return inflight.get(id); }
+const again = new Set();
+/**
+ * Read one repository's status again. fresh: something just changed it (an operation finished, a file in .git moved),
+ * so a read that is already running may predate the change and one more follows it. Routine reads (the timer, the
+ * window getting focus) share the running read instead: with many repositories, queueing those never catches up.
+ */
+async function refresh(id, fresh = false) {
+  if (inflight.has(id)) { if (fresh) again.add(id); return inflight.get(id); }
   const r = repos.get(id);
   if (!r) return null;
   const p = (async () => {
@@ -129,8 +134,11 @@ async function refresh(id) {
   try { return await p; } finally { inflight.delete(id); if (again.delete(id)) refresh(id).catch(() => {}); }
 }
 
-async function refreshAll() {
-  await queue.pool([...repos.keys()], 8, refresh);
+let allRunning = null;
+/** Every repository, eight at a time. A second request while one round is out joins that round. */
+function refreshAll() {
+  if (!allRunning) allRunning = queue.pool([...repos.keys()], 8, (id) => refresh(id)).finally(() => { allRunning = null; });
+  return allRunning;
 }
 
 // ---------- .git watchers for instant updates ----------
@@ -144,7 +152,7 @@ function watch(r) {
       const w = fs.watch(gitDir, { persistent: false }, (ev, name) => {
         if (!name || !/^(HEAD|index|MERGE_HEAD|ORIG_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|REBASE_HEAD|packed-refs|rebase-merge|rebase-apply)$/.test(name)) return;
         clearTimeout(debounce.get(r.id));
-        debounce.set(r.id, setTimeout(() => refresh(r.id), 400));
+        debounce.set(r.id, setTimeout(() => refresh(r.id, true), 400));
       });
       w.on('error', () => unwatch(r.id));
       watchers.set(r.id, w);
@@ -450,7 +458,7 @@ function start() {
     const hidden = new Set(cfg.skipHiddenOnFetch ? cfg.hidden || [] : []);
     await queue.pool([...repos.values()].filter((r) => !hidden.has(r.path)), 4, async (r) => {
       if (unreachable.skipReason(r, await git.remotes(r).catch(() => []))) return; // no remote, or one that is known to be gone
-      return queue.exclusive(r.id, 'Background fetch', () => git.fetch(r, { all: true })).then(() => refresh(r.id)).catch(() => {});
+      return queue.exclusive(r.id, 'Background fetch', () => git.fetch(r, { all: true })).then(() => refresh(r.id, true)).catch(() => {});
     });
   }, () => config.get().backgroundFetchMinutes * 60);
 }
